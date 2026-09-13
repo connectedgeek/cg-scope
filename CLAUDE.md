@@ -281,6 +281,28 @@ success and left the same stale bytes. The correction required writing from a
 different staging path, so "try again" is not the remedy. "Verify, write from
 somewhere else, verify again" is.
 
+**Recurrence, 2026-09-13, same day.** It happened again on `CLAUDE.md`, and
+this time the numbers were captured rather than reconstructed. The transfer
+reported `written`. The modification time moved from 1789335930683 to
+1789336121276. The file on disk was 34850 bytes; the file that was supposed to
+be there is 35478, and the text added by the edit was absent from the disk copy
+entirely. A read-back and hash comparison caught it immediately. Writing the
+identical bytes from a different staging path succeeded on the first try and
+the hashes then matched.
+
+Three things this pins down that the first occurrence only suggested. The
+modification time is not merely a weak signal, it is an actively false one: it
+moved both times while the content did not. The byte count is the cheapest
+reliable tell, and it was wrong by 628 bytes here, which is large enough that
+nobody skimming would have missed it, and small enough that plenty of edits
+would not produce a difference that obvious. And the staging path, not the
+destination, is what has to change; the destination was identical on both
+attempts and only the source moved.
+
+The practice stands and is now cheap to state: write, read back, hash-compare,
+and on a mismatch re-write from a new staging path and compare again. Never
+describe a file as written on the strength of the tool saying so.
+
 ### 2026-09-13: the verification read mutates images, so image hashes prove nothing
 
 **What it did.** The four icon PNGs were written to the machine and read back
@@ -462,12 +484,21 @@ whatever is left.
 
 ### Confirmed, so that they are not re-litigated
 
-- **2026-09-13, the package step's refusals.** Two have executed against real
-  state rather than a fixture: the dirty-tree refusal, which named `build.ps1`,
-  and the wrong-package refusal, which named fourteen backslashed entry names
-  and deleted the archive it had just written. Still never executed: the
-  no-commits refusal, and the refusal on a zip that already exists for that
-  version.
+- **2026-09-13, the package step's refusals.** Three have executed against real
+  state rather than a fixture: the dirty-tree refusal, which named `build.ps1`
+  once and then caught a `git commit` that had silently done nothing because
+  nothing was staged; and the wrong-package refusal, which named fourteen
+  backslashed entry names and deleted the archive it had just written. Still
+  never executed: the no-commits refusal, and the refusal on a zip that already
+  exists for that version.
+
+- **2026-09-13, the package success path, and the archive read back by another
+  tool.** `cg-scope-0.7.0.zip`, fifteen entries, 51,307 bytes. `tar -tf` is
+  bsdtar, which ships with Windows and is not the library that wrote the file,
+  and it reports all fifteen names with forward slashes. This is the only
+  verification in the repository so far that has watched a guard go red against
+  a real artifact, applied the fix, and then confirmed the green result with a
+  second implementation instead of with the thing under test.
 
 - **2026-09-13, the click guard.** With the inspector open, clicking a link on
   `connectedgeek.net` froze the reading and stayed on the page.
