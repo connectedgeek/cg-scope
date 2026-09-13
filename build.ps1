@@ -12,7 +12,8 @@
 #   .\build.ps1 check      run the guards. Produces no artifacts.
 #   .\build.ps1 selftest   prove the guards can fail, using fixtures.
 #   .\build.ps1 version    report the extension version from manifest.json.
-#   .\build.ps1 package    not implemented yet. Refuses rather than pretending.
+#   .\build.ps1 package    everything check does, then the zip, then read it
+#                          back and look inside it.
 #
 # ---------------------------------------------------------------------------
 # Why the network scanner is deliberately crude
@@ -793,6 +794,74 @@ Deliberately absent:
                 $failures++
             }
         }
+
+        # --- Case 10: which files ship ---------------------------------------
+        # The filter decides what a user receives. A mistake here ships a test
+        # fixture or a notes file, which is what RELEASING.md step 4 exists to
+        # catch by hand; this catches it earlier.
+        $cases++
+        $candidates = @(
+            'manifest.json', 'src/popup/popup.js', 'src/tools/ruler.js',
+            'icons/icon16.png',
+            'CLAUDE.md', 'README.md', 'build.ps1', 'docs/RELEASING.md',
+            'test/hostile.html', 'tools/png-strip.mjs', '.gitignore',
+            'dist/cg-scope-0.1.0.zip',
+            # Inside src/ and still excluded. The first version of the filter
+            # kept these, which contradicted the post-build inspection.
+            'src/popup/popup.js.map', 'src/.env.local', 'src/.DS_Store'
+        )
+        $expected = @('manifest.json', 'src/popup/popup.js', 'src/tools/ruler.js',
+                      'icons/icon16.png')
+        $got = @(Select-ShippingPaths -Paths $candidates)
+        $missing = @($expected | Where-Object { $got -notcontains $_ })
+        $extra   = @($got | Where-Object { $expected -notcontains $_ })
+        if ($missing.Count -eq 0 -and $extra.Count -eq 0) {
+            Write-Host '  pass  the shipping filter keeps manifest, src and icons and nothing else' -ForegroundColor Green
+        } else {
+            Write-Host '  FAIL  shipping filter' -ForegroundColor Red
+            foreach ($m in $missing) { Write-Host ("        missing: {0}" -f $m) -ForegroundColor DarkGray }
+            foreach ($e in $extra)   { Write-Host ("        extra  : {0}" -f $e) -ForegroundColor DarkGray }
+            $failures++
+        }
+
+        # --- Case 11: the disclosure gate ------------------------------------
+        # This is the gate that was written in bold in two documents on the
+        # previous project and walked past anyway. It has to be provably able
+        # to refuse.
+        $dDir = Join-Path $tmp 'disclosures'
+        New-Item -ItemType Directory -Path $dDir -Force | Out-Null
+
+        $discCases = @(
+            @{ Name = 'empty marker';   Body = "## Pending`n`n*(empty)*`n";                          ExpectClear = $true  }
+            @{ Name = 'one entry';      Body = "## Pending`n`n## 2026-09-13: started storing X`n";    ExpectClear = $false }
+            @{ Name = 'template only';  Body = "## Pending`n`n*(empty)*`n`n<!--`nTemplate:`nstuff`n-->`n"; ExpectClear = $true  }
+            @{ Name = 'entry then tmpl';Body = "## Pending`n`n## a thing`n`n<!--`nTemplate`n-->`n";    ExpectClear = $false }
+        )
+        $k = 0
+        foreach ($dc in $discCases) {
+            $cases++
+            $k++
+            $dp = Join-Path $dDir ("d{0}.md" -f $k)
+            [System.IO.File]::WriteAllText($dp, $dc.Body, (New-Object System.Text.UTF8Encoding $false))
+            $res = Test-DisclosuresClear -Path $dp
+            if ($res.Clear -eq $dc.ExpectClear) {
+                Write-Host ("  pass  disclosures '{0}' -> clear={1}" -f $dc.Name, $res.Clear) -ForegroundColor Green
+            } else {
+                Write-Host ("  FAIL  disclosures '{0}': expected clear={1}, got clear={2} ({3})" -f `
+                            $dc.Name, $dc.ExpectClear, $res.Clear, $res.Reason) -ForegroundColor Red
+                $failures++
+            }
+        }
+
+        # A missing gate is not an open one.
+        $cases++
+        $res = Test-DisclosuresClear -Path (Join-Path $dDir 'does-not-exist.md')
+        if ($res.Clear -eq $false) {
+            Write-Host '  pass  a missing disclosures file refuses rather than passing' -ForegroundColor Green
+        } else {
+            Write-Host '  FAIL  a missing disclosures file was treated as clear' -ForegroundColor Red
+            $failures++
+        }
     }
     finally {
         if (Test-Path -LiteralPath $tmp) {
@@ -816,21 +885,258 @@ Deliberately absent:
 # ---------------------------------------------------------------------------
 # package
 # ---------------------------------------------------------------------------
+# Every refusal below replaces a person remembering. The previous project's
+# build script earned its keep the day it refused a release that would have
+# published two different binaries under one version number.
+#
+# The two mistakes this exists to make impossible, per RELEASING.md:
+# shipping a version whose disclosures are not published, and shipping a
+# package whose contents nobody looked at.
+
+# What reaches a user. Everything else in the repository is for the people
+# working on it: documents, the build script, the test fixture, the icon
+# tooling. A pure function so the selftest can exercise it without a filesystem.
+function Select-ShippingPaths {
+    param([string[]]$Paths)
+    $keep = New-Object System.Collections.ArrayList
+    foreach ($p in $Paths) {
+        $n = $p.Replace('\', '/').TrimStart('./')
+
+        if (-not ($n -eq 'manifest.json' -or $n -like 'src/*' -or $n -like 'icons/*')) { continue }
+
+        # Excluded even inside the shipping directories. RELEASING.md step 4
+        # says to look for source maps, .env files and stray dotfiles by hand
+        # before uploading; the filter should mean there is nothing there to
+        # find. The post-build inspection checks for them again, and the first
+        # version of this function disagreed with that inspection: it kept
+        # .map files, so the zip would have been built and then deleted. Two
+        # guards contradicting each other is how the wrong one gets found.
+        $leaf = $n.Substring($n.LastIndexOf('/') + 1)
+        if ($n -like '*.map' -or $n -like '*.env*' -or $leaf.StartsWith('.')) { continue }
+
+        [void]$keep.Add($n)
+    }
+    return @($keep)
+}
+
+# PENDING-DISCLOSURES.md must be empty before a version is published. That rule
+# existed in bold in two documents on the previous project and was walked past
+# anyway, because nothing enforced it. This is the enforcement.
+function Test-DisclosuresClear {
+    param([string]$Path = $null)
+    $p = if ($Path) { $Path } else { Join-Path $RepoRoot 'docs/PENDING-DISCLOSURES.md' }
+
+    if (-not (Test-Path -LiteralPath $p)) {
+        return [pscustomobject]@{ Clear = $false; Items = @()
+            Reason = 'docs/PENDING-DISCLOSURES.md is missing. It is a gate, and a missing gate is not an open one.' }
+    }
+
+    $items = New-Object System.Collections.ArrayList
+    $inPending = $false
+    foreach ($line in (Get-Content -LiteralPath $p)) {
+        if ($line -match '^##\s+Pending\s*$') { $inPending = $true; continue }
+        if (-not $inPending) { continue }
+        # The commented-out template at the end of the file is not an entry.
+        if ($line -match '^\s*<!--') { break }
+        $t = $line.Trim()
+        if ($t -eq '' -or $t -eq '*(empty)*') { continue }
+        [void]$items.Add($t)
+    }
+
+    if ($items.Count -gt 0) {
+        return [pscustomobject]@{ Clear = $false; Items = @($items)
+            Reason = ("{0} unresolved item(s) under ## Pending" -f $items.Count) }
+    }
+    return [pscustomobject]@{ Clear = $true; Items = @(); Reason = 'nothing pending' }
+}
 
 function Invoke-Package {
     Write-Host ''
-    Write-Host 'package: NOT IMPLEMENTED' -ForegroundColor Yellow
+    Write-Host 'CG Scope: package' -ForegroundColor Cyan
+    Write-Host '-----------------'
+
+    # 1. Everything check does. A package is never produced from a tree that
+    #    would not pass the guards.
+    $checkResult = Invoke-Check
+    if ($checkResult -ne 0) {
+        Write-Host 'REFUSED: check did not pass.' -ForegroundColor Red
+        Write-Host ''
+        return 1
+    }
+
+    $v = Get-ExtensionVersion
+    if (-not $v.Valid) {
+        Write-Host 'REFUSED: no usable version.' -ForegroundColor Red
+        return 1
+    }
+
+    # 2. The disclosure gate, first among the package-only refusals because it
+    #    is the one that was walked past before.
+    $disc = Test-DisclosuresClear
+    if (-not $disc.Clear) {
+        Write-Host ''
+        Write-Host 'REFUSED: disclosures are not published.' -ForegroundColor Red
+        Write-Host ("  {0}" -f $disc.Reason) -ForegroundColor DarkGray
+        foreach ($i in $disc.Items) { Write-Host ("    {0}" -f $i) -ForegroundColor DarkGray }
+        Write-Host ''
+        Write-Host '  Publish the documents first, or remove the collection from'
+        Write-Host '  this release. There is no third option.'
+        Write-Host ''
+        return 1
+    }
+    Write-Host 'disclosures: nothing pending'
+
+    # 3. A dirty tree means the artifact cannot be traced to a commit, so
+    #    "is the thing in the store the thing I built" becomes unanswerable.
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        Write-Host 'REFUSED: git is not on PATH, so the tree cannot be verified clean.' -ForegroundColor Red
+        return 1
+    }
+
+    Push-Location $RepoRoot
+    try {
+        git rev-parse --verify HEAD 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host 'REFUSED: no commits. A package must be traceable to one.' -ForegroundColor Red
+            return 1
+        }
+        $dirty = @(git status --porcelain 2>$null | Where-Object { $_ })
+        if ($dirty.Count -gt 0) {
+            Write-Host ''
+            Write-Host 'REFUSED: the working tree is dirty.' -ForegroundColor Red
+            foreach ($d in $dirty) { Write-Host ("    {0}" -f $d) -ForegroundColor DarkGray }
+            Write-Host ''
+            return 1
+        }
+        $commit = (git rev-parse --short HEAD 2>$null)
+    }
+    finally { Pop-Location }
+    Write-Host ("tree: clean at {0}" -f $commit)
+
+    # 4. A version is packaged once. The Web Store refuses an upload whose
+    #    version is not higher than the published one, which is the only free
+    #    guard in the whole procedure; this catches the earlier mistake of
+    #    building twice from different trees under one number.
+    $distDir = Join-Path $RepoRoot 'dist'
+    $zipName = 'cg-scope-' + $v.Version + '.zip'
+    $zipPath = Join-Path $distDir $zipName
+    if (Test-Path -LiteralPath $zipPath) {
+        Write-Host ''
+        Write-Host ("REFUSED: {0} already exists." -f $zipName) -ForegroundColor Red
+        Write-Host '  Bump the version, or delete that file if you are certain it' -ForegroundColor DarkGray
+        Write-Host '  was never uploaded. Two packages under one version number is' -ForegroundColor DarkGray
+        Write-Host '  the defect this refusal exists for.' -ForegroundColor DarkGray
+        Write-Host ''
+        return 1
+    }
+
+    # 5. Build it.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+    $all = Get-ChildItem -LiteralPath $RepoRoot -Recurse -File |
+           ForEach-Object { $_.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') }
+    $ship = Select-ShippingPaths -Paths $all
+
+    if ($ship.Count -eq 0) {
+        Write-Host 'REFUSED: no shipping files found. Nothing was verified.' -ForegroundColor Red
+        return 1
+    }
+
+    $staging = Join-Path ([System.IO.Path]::GetTempPath()) ('cg-scope-pkg-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $staging -Force | Out-Null
+    try {
+        foreach ($rel in $ship) {
+            $src = Join-Path $RepoRoot ($rel -replace '/', '\')
+            $dst = Join-Path $staging ($rel -replace '/', '\')
+            $dstDir = Split-Path -Parent $dst
+            if (-not (Test-Path -LiteralPath $dstDir)) {
+                New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
+            }
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+        }
+
+        if (-not (Test-Path -LiteralPath $distDir)) {
+            New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+        }
+        [System.IO.Compression.ZipFile]::CreateFromDirectory(
+            $staging, $zipPath,
+            [System.IO.Compression.CompressionLevel]::Optimal,
+            $false)
+    }
+    finally {
+        if (Test-Path -LiteralPath $staging) {
+            Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 6. Look inside it. RELEASING.md step 4: not optional, and not satisfied by
+    #    the build printing "done". The zip is opened and read back.
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    try {
+        $entries = @($zip.Entries | ForEach-Object { $_.FullName })
+        $bad = @($entries | Where-Object {
+            $_ -like 'docs/*' -or $_ -like 'test/*' -or $_ -like 'tools/*' -or
+            $_ -like '*.md' -or $_ -like '.git*' -or $_ -like '*.ps1' -or
+            $_ -like '*.map' -or $_ -like '.env*'
+        })
+
+        $manifestEntry = $zip.Entries | Where-Object { $_.FullName -eq 'manifest.json' }
+        $packagedVersion = $null
+        if ($manifestEntry) {
+            $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
+            try { $packagedVersion = ($reader.ReadToEnd() | ConvertFrom-Json).version }
+            finally { $reader.Dispose() }
+        }
+    }
+    finally { $zip.Dispose() }
+
+    $problems = New-Object System.Collections.ArrayList
+    if ($bad.Count -gt 0) {
+        foreach ($b in $bad) { [void]$problems.Add("contains a file that should not ship: $b") }
+    }
+    if (-not $manifestEntry) { [void]$problems.Add('no manifest.json inside the package') }
+    elseif ($packagedVersion -ne $v.Version) {
+        # The previous project stamped a stale version onto six binaries and the
+        # check that missed it compared file sizes. This compares the bytes that
+        # are actually in the artifact.
+        [void]$problems.Add("the packaged manifest says $packagedVersion, the repository says $($v.Version)")
+    }
+
+    if ($problems.Count -gt 0) {
+        Write-Host ''
+        Write-Host 'REFUSED: the package is wrong. Deleting it.' -ForegroundColor Red
+        foreach ($p in $problems) { Write-Host ("  {0}" -f $p) -ForegroundColor DarkGray }
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        Write-Host ''
+        return 1
+    }
+
+    $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+    $size = (Get-Item -LiteralPath $zipPath).Length
+
+    # Recorded next to the artifact so that "is the thing in the store the thing
+    # I built" is answerable months later.
+    $record = Join-Path $distDir 'RELEASES.txt'
+    $line = ('{0}  {1}  {2}  {3} files  {4} bytes  commit {5}' -f
+             (Get-Date -Format 'yyyy-MM-dd HH:mm'), $v.Version, $hash, $entries.Count, $size, $commit)
+    Add-Content -LiteralPath $record -Value $line -Encoding UTF8
+
     Write-Host ''
-    Write-Host 'This refuses rather than producing something that looks like a'
-    Write-Host 'release. Per CLAUDE.md the package step must refuse when the'
-    Write-Host 'tree is dirty, the version was not bumped, check fails, a'
-    Write-Host 'permission has no justification, or PENDING-DISCLOSURES.md has'
-    Write-Host 'an unresolved item. None of those refusals exist yet, and a'
-    Write-Host 'package step without them is worse than no package step.'
+    Write-Host ("package: {0}" -f $zipName) -ForegroundColor Green
+    Write-Host ("  {0} files, {1:N0} bytes" -f $entries.Count, $size)
+    Write-Host ("  SHA-256 {0}" -f $hash) -ForegroundColor DarkGray
+    Write-Host ("  recorded in dist/RELEASES.txt") -ForegroundColor DarkGray
     Write-Host ''
-    Write-Host 'Outstanding item 11. Not before item 10.'
+    Write-Host '  Contents:' -ForegroundColor DarkGray
+    foreach ($e in ($entries | Sort-Object)) { Write-Host ("    {0}" -f $e) -ForegroundColor DarkGray }
     Write-Host ''
-    return 1
+    Write-Host '  This verified the package against your intent. It did not verify' -ForegroundColor DarkGray
+    Write-Host '  what the store serves. RELEASING.md step B7 is the only thing' -ForegroundColor DarkGray
+    Write-Host '  that does, and it means installing from the listing on a clean' -ForegroundColor DarkGray
+    Write-Host '  profile and looking.' -ForegroundColor DarkGray
+    Write-Host ''
+    return 0
 }
 
 # ---------------------------------------------------------------------------
