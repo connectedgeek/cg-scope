@@ -257,6 +257,73 @@ success and left the same stale bytes. The correction required writing from a
 different staging path, so "try again" is not the remedy. "Verify, write from
 somewhere else, verify again" is.
 
+### 2026-09-13: the verification read mutates images, so image hashes prove nothing
+
+**What it did.** The four icon PNGs were written to the machine and read back
+for verification. All four read back 5758 bytes larger than their source, the
+difference being a `caBX` ancillary chunk carrying content provenance metadata.
+`IHDR` and `IDAT` were byte-identical, so the image content was untouched.
+
+**The wrong conclusion, recorded because it was acted on.** The first version
+of this entry said the chunk was added on the way in, that the files on disk
+were therefore altered, and that the packaged extension would ship roughly
+23 KB of metadata neither author wrote. `tools/png-strip.mjs` was written to
+remove it.
+
+That was wrong. Running the stripper on the machine reported all four files
+**already clean**, at exactly the byte counts originally generated: 670, 1470,
+2344 and 6039. The files on disk were correct the entire time. The mutation is
+on the **read-back** path, not the write path.
+
+**Why it survived.** Both explanations fit the evidence available at the time,
+and the wrong one was the one that made the verification tooling look right. It
+took running something on the actual machine to tell them apart, which is
+invariant 1 in its ordinary clothes: the reasoning was sound and had not been
+executed.
+
+**What it actually means.** Byte comparison of images through this pipeline
+verifies nothing, because the act of reading mutates what is read. A check
+whose measurement changes the thing measured is not a check. For images the
+substitute is structural: compare `IHDR` and `IDAT`, which are the parts that
+carry the content, and ignore the ancillary chunks. For text files, which are
+unaffected, hash comparison remains the rule.
+
+**What prevents the recurrence.** `tools/png-strip.mjs` stays, with its purpose
+corrected: it is a diagnostic that says whether a PNG carries anything beyond
+what it needs to render, and it is idempotent, so running it is safe and
+reporting "already clean" is a useful answer rather than a no-op.
+
+### 2026-09-13: a restricted page reported "Unknown" instead of saying why
+
+**What it did.** Opening the popup on `chrome://extensions` showed
+`Current page: Unknown` with "No URL for the active tab." The intended and
+correct answer was that this is a page extensions cannot run on.
+
+**Why it happened.** `activeTab` is granted when the user invokes the extension
+on a page it is allowed to run on. On a `chrome://` page it is never granted,
+so `chrome.tabs.query` returns a tab object with no `url` property at all. The
+classifier treated a missing URL as "something went wrong" and fell through to
+the branch reserved for cases that cannot be explained.
+
+**Why it survived.** `classifyUrl` was written, reviewed, and reasoned about
+carefully, including a comment arguing that `unknown` and `restricted` must not
+be collapsed. The argument was correct. The code was still wrong, because
+nobody had opened the popup on a restricted page. The branch only executes in
+the one state you never happen to be in while developing.
+
+**What now prevents it.** A separate `no-access` classification that states
+what is known (Chrome provided no URL) and what it almost always means (a
+`chrome://` page, the Web Store, or another extension) without claiming to have
+identified which. `unknown` now means only what it says. The `tabs` permission
+would have made the exact answer available and was refused: it grants URL and
+title for every tab, which is browsing activity, and that is not a price worth
+paying to improve one message.
+
+**The general lesson, since it will recur.** Every classification branch that
+exists to describe an unusual state needs to be entered deliberately at least
+once. Reasoning about which branch will fire is not the same activity as
+firing it.
+
 ---
 
 ## Settled. Do not raise these.

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CG Scope</title>
+  <!--
+    CG Scope popup.
+
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+    Co-Authored-By: Connected Geek, LLC <support@connectedgeek.net>
+
+    No inline script and no inline event handlers. Manifest V3 forbids both by
+    default and the default cannot be loosened to allow remote code, so
+    everything is an external file and every listener is attached in JS.
+  -->
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="head">
+    <h1 class="name">CG Scope</h1>
+    <span class="version" id="version"></span>
+  </header>
+
+  <section class="page" id="page-status">
+    <span class="label">Current page</span>
+    <span class="value" id="page-value">checking</span>
+    <p class="note" id="page-note" hidden></p>
+  </section>
+
+  <section class="tools">
+    <p class="empty">
+      No tools yet. This build exists to prove the extension loads, the popup
+      opens, and activeTab reports the page you are on.
+    </p>
+  </section>
+
+  <footer class="foot">
+    <span id="foot-note">Local only. No network requests.</span>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

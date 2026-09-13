@@ -249,6 +249,112 @@ function Invoke-Version {
 }
 
 # ---------------------------------------------------------------------------
+# Permission justification
+# ---------------------------------------------------------------------------
+# Invariant 8: every permission in manifest.json has an entry in the
+# Permissions table in CLAUDE.md naming the feature that needs it, and a
+# permission whose feature was deleted is removed in the same commit.
+#
+# This guard checks BOTH directions, because both are failures:
+#   - a permission in the manifest with no justification is an unexplained
+#     capability, which is the most common reason a submission is queried
+#   - a justification with no permission is a document describing an extension
+#     that no longer exists, which is how CLAUDE.md stops being trusted
+#
+# It also enforces that host_permissions is empty, per "Settled" in CLAUDE.md.
+# That is a design decision with a written argument behind it, so the guard
+# makes changing it a deliberate act rather than a quiet one.
+#
+# Note on why justifications are not comments in manifest.json: JSON does not
+# have comments, and Chrome rejects or warns on unrecognised keys. CLAUDE.md is
+# where the reasoning lives, and this guard is what keeps the two in step.
+
+function Get-PermissionAudit {
+    param(
+        [string]$ManifestPath = $null,
+        [string]$DocPath = $null
+    )
+
+    $manifestPath = if ($ManifestPath) { $ManifestPath } else { Join-Path $RepoRoot 'manifest.json' }
+    $docPath      = if ($DocPath)      { $DocPath }      else { Join-Path $RepoRoot 'CLAUDE.md' }
+
+    $problems = New-Object System.Collections.ArrayList
+
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        return [pscustomobject]@{
+            Present = $false; Ok = $false; Problems = $problems
+            Manifest = @(); Documented = @()
+        }
+    }
+
+    try {
+        $json = (Get-Content -LiteralPath $manifestPath -Raw) | ConvertFrom-Json
+    }
+    catch {
+        [void]$problems.Add('manifest.json is not valid JSON')
+        return [pscustomobject]@{
+            Present = $true; Ok = $false; Problems = $problems
+            Manifest = @(); Documented = @()
+        }
+    }
+
+    function Get-JsonArray($obj, $name) {
+        $p = $obj.PSObject.Properties[$name]
+        if ($null -eq $p -or $null -eq $p.Value) { return @() }
+        return @($p.Value)
+    }
+
+    $required = Get-JsonArray $json 'permissions'
+    $optional = Get-JsonArray $json 'optional_permissions'
+    $hosts    = @(Get-JsonArray $json 'host_permissions') + @(Get-JsonArray $json 'optional_host_permissions')
+    $declared = @($required) + @($optional)
+
+    # Parse the Permissions table out of the document. Only table rows count:
+    # the "Deliberately absent" bullets below the table also contain backticked
+    # permission names, and counting those would let a permission be justified
+    # by the sentence explaining that it is NOT used. That is invariant 4,
+    # matching adjacent text rather than the construct.
+    $documented = New-Object System.Collections.ArrayList
+    if (Test-Path -LiteralPath $docPath) {
+        $inSection = $false
+        foreach ($line in (Get-Content -LiteralPath $docPath)) {
+            if ($line -match '^##\s+Permissions\s*$') { $inSection = $true; continue }
+            if ($inSection -and $line -match '^---\s*$') { break }
+            if ($inSection -and $line -match '^\|\s*`([A-Za-z_][A-Za-z0-9_]*)`') {
+                [void]$documented.Add($Matches[1])
+            }
+        }
+    }
+    else {
+        [void]$problems.Add(("CLAUDE.md not found at {0}" -f $docPath))
+    }
+
+    foreach ($p in $declared) {
+        if ($documented -notcontains $p) {
+            [void]$problems.Add(("permission '{0}' is in manifest.json but has no row in the CLAUDE.md Permissions table" -f $p))
+        }
+    }
+
+    foreach ($d in $documented) {
+        if ($declared -notcontains $d) {
+            [void]$problems.Add(("permission '{0}' is justified in CLAUDE.md but is not in manifest.json. Remove the justification or add the permission." -f $d))
+        }
+    }
+
+    foreach ($h in $hosts) {
+        [void]$problems.Add(("host permission '{0}' is declared. CLAUDE.md Settled says there are none; activeTab covers invocation-time access. Change the decision in writing first." -f $h))
+    }
+
+    return [pscustomobject]@{
+        Present    = $true
+        Ok         = ($problems.Count -eq 0)
+        Problems   = $problems
+        Manifest   = $declared
+        Documented = @($documented)
+    }
+}
+
+# ---------------------------------------------------------------------------
 # check
 # ---------------------------------------------------------------------------
 
@@ -272,6 +378,25 @@ function Invoke-Check {
         Write-Host ("version guard: {0}" -f $v.Version)
     } else {
         Write-Host ("version guard: not applicable ({0})" -f $v.Reason) -ForegroundColor DarkGray
+    }
+
+    # Permission guard. Same shape as the version guard: absent manifest is
+    # reported as not applicable, a present manifest is checked properly.
+    $perm = Get-PermissionAudit
+    if ($perm.Present) {
+        if (-not $perm.Ok) {
+            Write-Host ''
+            Write-Host 'FAIL: permissions and their justifications disagree.' -ForegroundColor Red
+            foreach ($p in $perm.Problems) {
+                Write-Host ("  {0}" -f $p) -ForegroundColor Red
+            }
+            Write-Host ''
+            return 1
+        }
+        Write-Host ("permission guard: {0} declared, all justified in CLAUDE.md" -f $perm.Manifest.Count)
+    }
+    else {
+        Write-Host 'permission guard: not applicable (no manifest.json)' -ForegroundColor DarkGray
     }
 
     $result = Invoke-ForbiddenScan -Root $SrcRoot
@@ -305,9 +430,10 @@ function Invoke-Check {
     Write-Host ''
     Write-Host 'check: PASS' -ForegroundColor Green
     Write-Host ''
-    Write-Host 'Not yet checked, because the thing being checked does not exist:' -ForegroundColor DarkGray
-    Write-Host '  - manifest permissions justified in CLAUDE.md (no manifest.json yet)' -ForegroundColor DarkGray
-    Write-Host '  - lint, tests (no source yet)' -ForegroundColor DarkGray
+    Write-Host 'Not checked, and this list is the honest scope of what PASS means:' -ForegroundColor DarkGray
+    Write-Host '  - no lint (no linter configured)' -ForegroundColor DarkGray
+    Write-Host '  - no unit tests of tool behaviour (no tools yet)' -ForegroundColor DarkGray
+    Write-Host '  - nothing here executes the extension. Only Chrome does that.' -ForegroundColor DarkGray
     Write-Host ''
     return 0
 }
@@ -473,6 +599,72 @@ export { prefetchHint, fetchedAt, evaluate, importantValue };
             Write-Host '  pass  missing manifest reports Present=false' -ForegroundColor Green
         } else {
             Write-Host '  FAIL  missing manifest did not report Present=false' -ForegroundColor Red
+            $failures++
+        }
+
+        # --- Case 7: the permission guard must catch both directions --------
+        $pDir = Join-Path $tmp 'perms'
+        New-Item -ItemType Directory -Path $pDir -Force | Out-Null
+
+        # A stand-in CLAUDE.md justifying exactly two permissions. The trailing
+        # bullet is the trap: it names a permission in prose that the guard
+        # must NOT count as justified, because it is the sentence saying the
+        # permission is deliberately absent.
+        $fakeDoc = @'
+## Permissions
+
+| Permission | Feature that needs it |
+|---|---|
+| `activeTab` | Every tool. |
+| `storage` | Preferences. |
+
+Deliberately absent:
+
+- No `tabs`. It grants URL and title of every tab.
+
+---
+
+## Next section
+'@
+        $docPath = Join-Path $pDir 'CLAUDE.md'
+        [System.IO.File]::WriteAllText($docPath, $fakeDoc, (New-Object System.Text.UTF8Encoding $false))
+
+        $permCases = @(
+            @{ Name = 'all justified';        Json = '{"permissions":["activeTab","storage"]}';                 ExpectOk = $true  }
+            @{ Name = 'undocumented perm';    Json = '{"permissions":["activeTab","storage","cookies"]}';        ExpectOk = $false }
+            @{ Name = 'documented but gone';  Json = '{"permissions":["activeTab"]}';                            ExpectOk = $false }
+            @{ Name = 'host permission';      Json = '{"permissions":["activeTab","storage"],"host_permissions":["*://*/*"]}'; ExpectOk = $false }
+            @{ Name = 'prose is not a row';   Json = '{"permissions":["activeTab","storage","tabs"]}';           ExpectOk = $false }
+        )
+
+        $j = 0
+        foreach ($pc in $permCases) {
+            $cases++
+            $j++
+            $mp = Join-Path $pDir ("manifest{0}.json" -f $j)
+            [System.IO.File]::WriteAllText($mp, $pc.Json, (New-Object System.Text.UTF8Encoding $false))
+            $res = Get-PermissionAudit -ManifestPath $mp -DocPath $docPath
+            if ($res.Ok -eq $pc.ExpectOk) {
+                Write-Host ("  pass  permissions '{0}' -> ok={1}" -f $pc.Name, $res.Ok) -ForegroundColor Green
+            } else {
+                Write-Host ("  FAIL  permissions '{0}': expected ok={1}, got ok={2}" -f `
+                            $pc.Name, $pc.ExpectOk, $res.Ok) -ForegroundColor Red
+                foreach ($prob in $res.Problems) { Write-Host ("        {0}" -f $prob) -ForegroundColor DarkGray }
+                $failures++
+            }
+        }
+
+        # --- Case 8: optional_permissions count as declared -----------------
+        # A permission requested at runtime still needs a justification; it is
+        # not exempt for being optional.
+        $cases++
+        $mp = Join-Path $pDir 'manifest-optional.json'
+        [System.IO.File]::WriteAllText($mp, '{"permissions":["activeTab","storage"],"optional_permissions":["downloads"]}', (New-Object System.Text.UTF8Encoding $false))
+        $res = Get-PermissionAudit -ManifestPath $mp -DocPath $docPath
+        if ($res.Ok -eq $false) {
+            Write-Host '  pass  an undocumented optional_permission is caught' -ForegroundColor Green
+        } else {
+            Write-Host '  FAIL  optional_permissions were not checked' -ForegroundColor Red
             $failures++
         }
     }
