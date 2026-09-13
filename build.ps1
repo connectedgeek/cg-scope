@@ -296,6 +296,52 @@ function Get-VersionBumpVerdict {
 # extension, and treating it as one would make the rule noise.
 $ShippingPaths = @('manifest.json', 'src', 'icons')
 
+# ---------------------------------------------------------------------------
+# Calling git without the script dying
+# ---------------------------------------------------------------------------
+# git writes advisory text to stderr as a matter of routine: line-ending
+# notices, safe.directory advice, detached HEAD guidance. None of those are
+# failures, and git says so with its exit code. But this script runs under
+# $ErrorActionPreference = 'Stop' (line 50) and PowerShell turns a native
+# command's stderr into ErrorRecords, so the first advisory line was a
+# terminating error. `2>$null` at the call site does not prevent it, which is
+# why four call sites already carrying that redirection were still vulnerable.
+#
+# Found on 2026-09-13 while trying to prove a different guard: Add-Content
+# wrote CRLF into a file .gitattributes declares as LF, git warned, and `check`
+# aborted inside the bump guard with a NativeCommandError instead of reporting
+# anything at all. Latent since the bump guard was written, because git had
+# never had a reason to warn during a check.
+#
+# Every git call in this file goes through here. That is the whole point: a
+# remedy applied at four call sites is a remedy that gets forgotten at the
+# fifth.
+function Invoke-Git {
+    param([Parameter(Mandatory = $true)][string[]] $Arguments)
+
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $raw = & git @Arguments 2>&1
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $prev
+    }
+
+    # Anything git put on stderr arrives here as an ErrorRecord. Dropped rather
+    # than returned: callers want git's answer, and an advisory is not part of
+    # the answer. Failure is reported by the exit code, which is the only thing
+    # git guarantees.
+    $lines = New-Object System.Collections.ArrayList
+    foreach ($item in @($raw)) {
+        if ($item -is [System.Management.Automation.ErrorRecord]) { continue }
+        [void]$lines.Add([string]$item)
+    }
+
+    return [pscustomobject]@{ ExitCode = $code; Lines = $lines.ToArray() }
+}
+
 function Get-GitBumpState {
     $git = Get-Command git -ErrorAction SilentlyContinue
     if (-not $git) {
@@ -305,20 +351,20 @@ function Get-GitBumpState {
 
     Push-Location $RepoRoot
     try {
-        git rev-parse --verify HEAD 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        if ((Invoke-Git @('rev-parse', '--verify', 'HEAD')).ExitCode -ne 0) {
             return [pscustomobject]@{ Available = $false; HeadVersion = $null; ChangedCount = 0
                 Note = 'no commits yet' }
         }
 
-        $headManifest = git show HEAD:manifest.json 2>$null
+        $showHead = Invoke-Git @('show', 'HEAD:manifest.json')
+        $headManifest = $showHead.Lines -join "`n"
         $headVersion = $null
-        if ($LASTEXITCODE -eq 0 -and $headManifest) {
+        if ($showHead.ExitCode -eq 0 -and $headManifest) {
             try { $headVersion = ($headManifest | ConvertFrom-Json).version } catch { $headVersion = $null }
         }
 
-        $modified = @(git diff --name-only HEAD -- $ShippingPaths 2>$null)
-        $untracked = @(git ls-files --others --exclude-standard -- $ShippingPaths 2>$null)
+        $modified  = @((Invoke-Git (@('diff', '--name-only', 'HEAD', '--') + $ShippingPaths)).Lines)
+        $untracked = @((Invoke-Git (@('ls-files', '--others', '--exclude-standard', '--') + $ShippingPaths)).Lines)
         $changed = @($modified + $untracked | Where-Object { $_ } | Select-Object -Unique)
 
         return [pscustomobject]@{
@@ -439,6 +485,96 @@ function Get-PermissionAudit {
 # check
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Does the JavaScript parse
+# ---------------------------------------------------------------------------
+# `check` has always reported PASS on files nothing ever parsed. On 2026-09-13
+# src/tools/images.js reached the disk with a backtick inside a CSS comment,
+# which closed the template literal that CSS lives in. Chrome would have
+# refused to load the file. `check` was green, and the only reason it did not
+# ship was somebody running node by hand.
+#
+# Node does the parsing because the alternative is writing a JavaScript parser
+# in PowerShell, which would be a worse parser with more bugs than the thing it
+# was guarding.
+function Get-NodeCommand {
+    $cmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Test-JsSyntax {
+    param([string[]] $Paths, [string] $Node)
+
+    $failures = New-Object System.Collections.ArrayList
+    $checked = 0
+
+    # node --check writes its diagnosis to stderr and exits non-zero, which is
+    # the normal and expected outcome for every file this guard exists to
+    # catch. Merging that stderr with 2>&1 turns each line into an ErrorRecord,
+    # and this script runs under $ErrorActionPreference = 'Stop' (line 50), so
+    # the first one was a terminating error: the guard worked and the selftest
+    # harness died at the first deliberately-broken fixture, taking the proof
+    # of every other guard with it.
+    #
+    # Lowered for the duration of these calls only, and restored in a finally,
+    # so that a throw cannot leave the rest of the script running under
+    # 'Continue' with nobody aware of it.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        foreach ($p in $Paths) {
+            $checked++
+
+            # Tried as a classic script first, then as a module. A file using
+            # `import` or `export` at the top level is not valid CommonJS, and
+            # `node --check` assumes CommonJS for a .js extension. Deciding
+            # which style each file is would be a rule somebody has to maintain
+            # and eventually get wrong; a file that fails BOTH ways is a syntax
+            # error under any reading, and that is the only claim made here.
+            $null = & $Node --check $p 2>&1
+            if ($LASTEXITCODE -eq 0) { continue }
+
+            $tmpFile = Join-Path ([System.IO.Path]::GetTempPath()) ('cg-syntax-' + [guid]::NewGuid().ToString('N') + '.mjs')
+            try {
+                Copy-Item -LiteralPath $p -Destination $tmpFile -Force
+                $out = & $Node --check $tmpFile 2>&1
+                if ($LASTEXITCODE -eq 0) { continue }
+
+                # PowerShell wraps a native command's stderr in ErrorRecord
+                # objects. Casting one to a string gives its type name rather
+                # than its text whenever the message is empty, which node emits
+                # for its blank and caret lines, so a real failure printed
+                # three lines of System.Management.Automation.RemoteException
+                # between the two lines worth reading. The message is taken
+                # from the exception and empty lines are dropped.
+                $msgLines = New-Object System.Collections.ArrayList
+                foreach ($item in @($out)) {
+                    $text = if ($item -is [System.Management.Automation.ErrorRecord]) {
+                        $item.Exception.Message
+                    } else {
+                        [string]$item
+                    }
+                    if ($text -and $text.Trim()) { [void]$msgLines.Add($text.TrimEnd()) }
+                }
+                # The temp path is in node's message and means nothing to a
+                # reader, so it is swapped back for the real one.
+                $text = (@($msgLines) | Select-Object -First 4) -join "`n"
+                $text = $text.Replace($tmpFile, $p)
+                [void]$failures.Add(@{ Path = $p; Error = $text })
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    finally {
+        $ErrorActionPreference = $prev
+    }
+
+    return @{ Checked = $checked; Failures = $failures.ToArray() }
+}
+
 function Invoke-Check {
     Write-Host ''
     Write-Host 'CG Scope: check' -ForegroundColor Cyan
@@ -530,12 +666,46 @@ function Invoke-Check {
     }
 
     Write-Host 'network guard: PASS' -ForegroundColor Green
+
+    # Syntax guard.
+    $node = Get-NodeCommand
+    if (-not $node) {
+        # Loud, and not counted as a pass. A guard that quietly does nothing
+        # when its tool is missing is worse than no guard, because the output
+        # still reads as green.
+        Write-Host 'syntax guard: SKIPPED, node was not found on PATH' -ForegroundColor Yellow
+        Write-Host '  Nothing parsed the JavaScript. This is not a pass.' -ForegroundColor DarkGray
+    }
+    elseif (-not (Test-Path -LiteralPath $SrcRoot)) {
+        Write-Host 'syntax guard: no src/ to parse' -ForegroundColor DarkGray
+    }
+    else {
+        $jsFiles = @(Get-ChildItem -LiteralPath $SrcRoot -Recurse -File -Filter *.js |
+                     ForEach-Object { $_.FullName })
+        $syn = Test-JsSyntax -Paths $jsFiles -Node $node
+        if ($syn.Failures.Count -gt 0) {
+            Write-Host ''
+            Write-Host ("FAIL: {0} file(s) under src/ do not parse." -f $syn.Failures.Count) -ForegroundColor Red
+            foreach ($f in $syn.Failures) {
+                Write-Host ("  {0}" -f $f.Path) -ForegroundColor DarkGray
+                foreach ($line in ($f.Error -split "`n")) {
+                    Write-Host ("      {0}" -f $line) -ForegroundColor DarkGray
+                }
+            }
+            Write-Host ''
+            return 1
+        }
+        Write-Host ("syntax guard: {0} file(s) parse" -f $syn.Checked)
+    }
+
     Write-Host ''
     Write-Host 'check: PASS' -ForegroundColor Green
     Write-Host ''
     Write-Host 'Not checked, and this list is the honest scope of what PASS means:' -ForegroundColor DarkGray
     Write-Host '  - no lint (no linter configured)' -ForegroundColor DarkGray
     Write-Host '  - no unit tests of tool behaviour (no tools yet)' -ForegroundColor DarkGray
+    Write-Host '  - parsing is not running. A file that parses can still throw' -ForegroundColor DarkGray
+    Write-Host '    on its first line.' -ForegroundColor DarkGray
     Write-Host '  - nothing here executes the extension. Only Chrome does that.' -ForegroundColor DarkGray
     Write-Host ''
     return 0
@@ -864,6 +1034,86 @@ Deliberately absent:
             }
         }
 
+        # --- Case 10c: does the JavaScript parse -----------------------------
+        # The guard that did not exist on 2026-09-13, when a file reached the
+        # disk that Chrome could not have loaded while check reported PASS.
+        # The 'backtick' fixture is that defect reduced to four lines: a
+        # backtick inside a CSS comment, inside the template literal the CSS
+        # lives in, which closes the literal early.
+        $nodeCmd = Get-NodeCommand
+        if (-not $nodeCmd) {
+            Write-Host '  SKIP  syntax cases: node was not found on PATH' -ForegroundColor Yellow
+            Write-Host '        Four cases did not run, and the total below is short by four.' -ForegroundColor DarkGray
+        }
+        else {
+            $sDir = Join-Path $tmp 'syntax'
+            New-Item -ItemType Directory -Path $sDir -Force | Out-Null
+
+            $okClassic = @'
+(() => {
+  'use strict';
+  const css = `.x { color: red; }`;
+  return css;
+})();
+'@
+            $okModule = @'
+export const answer = 1;
+'@
+            $badTick = @'
+const css = `
+  /* `x` closes this template literal early */
+`;
+'@
+            $badBrace = @'
+function f() {
+  return 1;
+'@
+
+            $syntaxCases = @(
+                @{ Name = 'a classic script';        Parses = $true;  Body = $okClassic }
+                @{ Name = 'an ES module';            Parses = $true;  Body = $okModule }
+                @{ Name = 'a backtick in a template';Parses = $false; Body = $badTick }
+                @{ Name = 'an unclosed brace';       Parses = $false; Body = $badBrace }
+            )
+
+            foreach ($fx in $syntaxCases) {
+                $cases++
+                $fxPath = Join-Path $sDir ('fx' + $cases + '.js')
+                [System.IO.File]::WriteAllText($fxPath, $fx.Body, (New-Object System.Text.UTF8Encoding $false))
+                $res = Test-JsSyntax -Paths @($fxPath) -Node $nodeCmd
+                $parsed = ($res.Failures.Count -eq 0)
+                if ($parsed -eq $fx.Parses) {
+                    Write-Host ("  pass  syntax, {0} -> parses={1}" -f $fx.Name, $parsed) -ForegroundColor Green
+                } else {
+                    Write-Host ("  FAIL  syntax, {0}: expected parses={1}, got parses={2}" -f `
+                                $fx.Name, $fx.Parses, $parsed) -ForegroundColor Red
+                    $failures++
+                }
+            }
+        }
+
+        # --- Case 10d: git writing to stderr must not be fatal ---------------
+        # The defect this covers aborted `check` mid-run with a
+        # NativeCommandError, which reads as the script crashing rather than a
+        # guard reporting. A ref that cannot exist makes git write to stderr
+        # and exit non-zero on any machine, inside a repository or not, which
+        # is what makes this deterministic rather than dependent on a warning
+        # happening to occur.
+        $cases++
+        try {
+            $gitCase = Invoke-Git @('rev-parse', '--verify', 'cg-scope-no-such-ref-ever')
+            if ($gitCase.ExitCode -ne 0) {
+                Write-Host '  pass  git writing to stderr returns an exit code instead of throwing' -ForegroundColor Green
+            } else {
+                Write-Host '  FAIL  expected a non-zero exit for a ref that cannot exist' -ForegroundColor Red
+                $failures++
+            }
+        }
+        catch {
+            Write-Host ('  FAIL  Invoke-Git threw instead of returning: ' + $_.Exception.Message) -ForegroundColor Red
+            $failures++
+        }
+
         # --- Case 11: the disclosure gate ------------------------------------
         # This is the gate that was written in bold in two documents on the
         # previous project and walked past anyway. It has to be provably able
@@ -1087,12 +1337,11 @@ function Invoke-Package {
 
     Push-Location $RepoRoot
     try {
-        git rev-parse --verify HEAD 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        if ((Invoke-Git @('rev-parse', '--verify', 'HEAD')).ExitCode -ne 0) {
             Write-Host 'REFUSED: no commits. A package must be traceable to one.' -ForegroundColor Red
             return 1
         }
-        $dirty = @(git status --porcelain 2>$null | Where-Object { $_ })
+        $dirty = @((Invoke-Git @('status', '--porcelain')).Lines | Where-Object { $_ })
         if ($dirty.Count -gt 0) {
             Write-Host ''
             Write-Host 'REFUSED: the working tree is dirty.' -ForegroundColor Red
@@ -1100,7 +1349,7 @@ function Invoke-Package {
             Write-Host ''
             return 1
         }
-        $commit = (git rev-parse --short HEAD 2>$null)
+        $commit = ((Invoke-Git @('rev-parse', '--short', 'HEAD')).Lines | Select-Object -First 1)
     }
     finally { Pop-Location }
     Write-Host ("tree: clean at {0}" -f $commit)
