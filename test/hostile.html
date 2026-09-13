@@ -50,6 +50,19 @@
   .trap .expect { color: #1f2328; }
   button {
     font: inherit;
+    /* Both halves of the pair, or neither.
+
+       This shipped with `background` set and `color` left out. Buttons do not
+       inherit colour, so the label fell back to the `buttontext` system colour,
+       which under the `color-scheme: light dark` declared at the top of this
+       file is near-white in dark mode. The result was white labels on a white
+       background: trap 3 and trap 4 rendered as empty boxes, and only trap 2
+       was readable because its pressed state sets its own colour.
+
+       This is the same rule shared/panel.js follows and says why in its own
+       header, broken here in the file that exists to test the code that gets
+       it right. A fixture nobody can read is a fixture nobody runs. */
+    color: #1f2328;
     padding: 7px 12px;
     border: 1px solid #e67a0f;
     border-radius: 5px;
@@ -72,6 +85,16 @@
     pointer-events: none;
   }
   #ceiling.on { display: block; }
+  /* The plain ceiling sets pointer-events: none above, so the page stays
+     clickable and the trap can be switched off again. That makes it a test of
+     painting only, and the expectation originally written on the card was
+     about usability, which it could not produce.
+
+     This is the honest version of the condition: the same sheet, taking input,
+     which is what a cookie wall or a modal backdrop does. It removes itself on
+     a timer, because while it is up nothing on this page can be clicked,
+     including the button that started it. */
+  #ceiling.blocking { pointer-events: auto; }
   #ceiling span {
     position: absolute;
     right: 14px;
@@ -117,11 +140,22 @@
   <h2>1. An element at the maximum z-index</h2>
   <p>
     Run: <strong>Ruler</strong> or <strong>Inspector</strong>.
-    <span class="expect">Expected: the tool is behind the grey sheet and
-    unusable. That is the documented cost of sitting below the maximum, not a
-    bug. What matters is whether it fails visibly or looks broken.</span>
+    <span class="expect">Confirmed 2026-09-13 with the first button. The
+    overlay does sit underneath and is tinted by whatever the covering element
+    paints, but it stays usable, and the panel barely shows it because the
+    panel is nearly black already. The expectation printed here previously said
+    "unusable", which was wrong: that sheet sets
+    <code>pointer-events: none</code> and blocks nothing.</span>
+  </p>
+  <p>
+    <span class="expect">The second button is the condition that matters: the
+    same sheet taking input, which is what a cookie wall or a modal backdrop
+    does. It removes itself after 15 seconds, because while it is up nothing on
+    this page can be clicked, including the button that started it. Open the
+    tool <em>first</em>, then start the countdown, then try to drag.</span>
   </p>
   <button id="b1" type="button" aria-pressed="false">Toggle ceiling</button>
+  <button id="b1b" type="button">Blocking ceiling, 15s</button>
   <span class="state" id="s1">off</span>
 </div>
 
@@ -182,6 +216,33 @@
 
   toggle($('b1'), $('s1'), 'covering the page', 'off', (on) => {
     $('ceiling').classList.toggle('on', on);
+  });
+
+  // The blocking variant does not use toggle(): it cannot be switched off by a
+  // second click, because the thing it puts on screen is what stops the click
+  // from arriving. A timer is the only way back, so the timer is the feature.
+  let blockTimer = null;
+  $('b1b').addEventListener('click', () => {
+    if (blockTimer) return;
+    let left = 15;
+    const restore = () => {
+      const stuck = $('b1').getAttribute('aria-pressed') === 'true';
+      $('ceiling').classList.remove('blocking');
+      $('ceiling').classList.toggle('on', stuck);
+      $('s1').textContent = stuck ? 'covering the page' : 'off';
+    };
+    $('ceiling').classList.add('on', 'blocking');
+    $('s1').textContent = 'blocking, ' + left + 's';
+    blockTimer = setInterval(() => {
+      left -= 1;
+      if (left > 0) {
+        $('s1').textContent = 'blocking, ' + left + 's';
+        return;
+      }
+      clearInterval(blockTimer);
+      blockTimer = null;
+      restore();
+    }, 1000);
   });
 
   toggle($('b2'), $('s2'), 'root is transformed', 'off', (on) => {

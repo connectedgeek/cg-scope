@@ -470,19 +470,51 @@ Clearing a line means doing the thing and seeing the result, then deleting the
 line in the same commit as whatever fix it produced. Outstanding item 10 clears
 whatever is left.
 
-- [ ] **An element at z-index 2147483647.** The overlay sits at 2147483000,
-      deliberately below the maximum so a genuinely higher element stays
-      visible rather than being silently hidden. No page tested so far has one,
-      so the consequence of that choice has never been seen.
-- [ ] **A `transform` on `html`.** The host is attached to `documentElement` to
-      avoid the `body` case, which leaves this one unexercised. It would break
-      fixed positioning and put the overlay in the wrong place.
 - [ ] **A document large enough to trip the 6000-element scan cap.** GitHub's
       repository page has 1319 elements, so the cap is further away than
       assumed and the truncation notice has never been shown. Until it is, the
       notice is a message nobody has read.
 
 ### Confirmed, so that they are not re-litigated
+
+- **2026-09-13, trap 1, an element at z-index 2147483647.** Confirmed in two
+  halves, and the second half is the one that matters.
+
+  *Painting.* The overlay sits underneath and is tinted by whatever the covering
+  element paints. Under the fixture's `rgba(20, 20, 30, 0.35)` sheet the panel
+  looks almost unchanged, because the panel is nearly black already, and the
+  ruler's orange rectangle goes visibly muted brown. Nothing looks broken. It
+  looks like a slightly dimmer tool.
+
+  *Interaction.* The fixture's original sheet sets `pointer-events: none`, so
+  the tool remained completely usable and a 747 x 447 drag completed normally.
+  The card's stated expectation was "unusable", which that sheet could not
+  produce: the trap tested painting and the expectation was about input. A
+  second button was added that raises the same sheet with `pointer-events:
+  auto`, which is what a cookie wall or a modal backdrop actually does, and
+  removes it after fifteen seconds because while it is up the button that
+  started it cannot be clicked either. Under that sheet **nothing could be
+  drawn or dragged at all** for the full fifteen seconds.
+
+  So the cost of sitting at 2147483000 is not cosmetic. Against a covering
+  element that takes input, the tool is unreachable, and it is unreachable
+  silently: the popup launches it, no error appears, and the page simply does
+  not respond.
+
+- **2026-09-13, trap 2, a `transform` on `html`.** Confirmed broken. The
+  overlay is positioned against the transformed root rather than the viewport,
+  because a transformed ancestor becomes the containing block for its
+  fixed-position descendants, and the host is `position: fixed` attached to
+  `documentElement`, which is the element being transformed.
+
+  The numbers stay correct and only the drawing moves, which is the more
+  confusing of the two failure modes. `clientX` and `clientY` are viewport
+  coordinates that a transform does not touch, so the panel accurately reports
+  the drag that was performed; the rectangle is simply drawn somewhere else, so
+  the tool cannot be aimed. Measured against the fixture's `scale(0.98)` with
+  `transform-origin: top center`: a drag starting at `X, Y = 10, 8` drew at CSS
+  x 28.6, and `945 + 0.98 x (10 - 945)` is 28.7, where 945 is the horizontal
+  centre. The model fits to within a pixel.
 
 - **2026-09-13, the package step's refusals.** Three have executed against real
   state rather than a fixture: the dirty-tree refusal, which named `build.ps1`
@@ -607,7 +639,7 @@ with page-wide colours and fonts, the colour picker, and the page report.
     colours, and a page that rewrites its DOM after load.
 11. **Decide whether to move to an unlisted listing.** Not before item 10.
 
-### The known fix for traps 1 and 2, held until they are confirmed
+### The known fix for traps 1 and 2, no longer held
 
 Both the maximum-z-index case and the transform-on-`html` case have the same
 remedy: put the overlay host in the **top layer** with the Popover API
@@ -616,12 +648,21 @@ all normal content regardless of z-index, and are not positioned relative to a
 transformed ancestor. It would need the default popover styling reset and a
 fallback for when `showPopover` is unavailable.
 
-**It is deliberately not implemented yet.** The current approach demonstrably
-works on every real page it has met, and swapping the positioning model of
-every tool to fix two failures that have never been observed risks breaking
-what works to repair what might not be broken. The fix is written down so that
-confirming the problem and fixing it are one short step rather than a research
-task. Confirm first.
+**The condition for building it has been met.** It was held back because
+swapping the positioning model of every tool to repair two failures nobody had
+observed risks breaking what works. Both were observed on 2026-09-13 and both
+are recorded under Confirmed above: the transform case puts the drawing in the
+wrong place while the numbers stay right, and the maximum-z-index case makes
+the tool silently unreachable when the covering element takes input.
+
+Two things to be honest about before it is written. The claim that a top-layer
+element is not positioned relative to a transformed ancestor comes from the
+specification and has not been tested here, so the fix is not proven until it
+has been run against both traps. And `showPopover` on a host element inside an
+arbitrary page is a path this extension has never executed, which puts it in
+the same category as everything else on the Unverified list. It is a fix with a
+test waiting for it, which is the right order, but it is not a fix that can be
+called done on the strength of being written.
 
 ---
 
