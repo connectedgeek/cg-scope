@@ -73,7 +73,7 @@ Filled in per component, because "I saved the file" answers none of these.
 | A tool already injected into an open tab | **Nothing.** Reloading the extension does not touch code already running in a page. | Reload the page itself. Otherwise you are debugging a ghost. |
 | Popup UI | Closing and reopening the popup. It is re-created each time. | |
 | `chrome.storage.local` contents | Only code that writes to it | Read it back in the popup or via DevTools on the extension page |
-| Packaged zip | `build.ps1 package`. **Does not exist yet.** | Unzip it and read the files |
+| Packaged zip | `build.ps1 package`, which builds it, reads it back, and deletes it if it is wrong | Read the archive's **entry names**, not the extracted files. An unzipper can quietly compensate for a malformed name; the entry name is what the store receives. `tar -tf` ships with Windows and is not the library that wrote the file. |
 | Unlisted Web Store item | Upload **and** publish, then Chrome pushing it to the profile | The version in `chrome://extensions`, never the dashboard |
 
 **Published is not installed**, once there is anything published. Chrome rolls
@@ -84,9 +84,6 @@ already have a previous change.
 
 ## Commands
 
-**None of these exist yet.** This section is a specification for `build.ps1`,
-not a description of something that runs. Delete this sentence when it is real.
-
 ```
 .\build.ps1 check      guards, lint and tests. No artifacts produced.
 .\build.ps1 selftest   prove the guards can fail, against fixtures
@@ -96,10 +93,17 @@ not a description of something that runs. Delete this sentence when it is real.
 
 One script with arguments, not two scripts. Two near-identical scripts diverge.
 
-**The package step must refuse to run when:** the working tree is dirty, the
-version was not bumped, `check` fails, a permission appears in `manifest.json`
-with no justification recorded below, or `docs/PENDING-DISCLOSURES.md` lists an
-unresolved item. Each refusal replaces a person remembering.
+**The package step refuses when:** `check` fails, which covers the version, the
+version bump, the permission justifications and the network scan;
+`docs/PENDING-DISCLOSURES.md` lists an unresolved item; the working tree is
+dirty; there are no commits; a zip already exists for that version; or the
+archive it just wrote does not contain what it should, in which case it deletes
+that archive rather than leaving a rejected file on disk. Each refusal replaces
+a person remembering.
+
+A refusal nobody has watched fail is a refusal on paper. Which of these have
+fired against real state, and which have only ever been reasoned about, is
+recorded under "Confirmed" below.
 
 ---
 
@@ -375,6 +379,61 @@ firing it.
 
 ---
 
+### 2026-09-13: a guard passed on every run and could not have failed
+
+**What it did.** `build.ps1 package` built `cg-scope-0.6.1.zip`, opened it,
+read the entries back, printed them, and passed. The names it printed were
+`icons\icon128.png` and `src\popup\popup.js`. The ZIP format specifies forward
+slashes, and .NET's `CreateFromDirectory` stamps the platform separator into
+the archive on Windows, so every entry below the root was named with a
+character the format does not use.
+
+Three of the inspection's own patterns were written with forward slashes:
+
+```
+$_ -like 'docs/*' -or $_ -like 'test/*' -or $_ -like 'tools/*'
+```
+
+Against a backslashed name those are false for every input. The directory half
+of the post-build inspection was incapable of producing a finding.
+
+**Why it survived.** Three reasons, and the third is the one that generalises.
+
+The builder and the check were written in the same sitting by the same author
+and neither was run against the other. The two halves shared an assumption and
+agreed with each other about it.
+
+Forty-two selftest cases passed. `Select-ShippingPaths` is a pure function
+tested in isolation and it correctly returns forward slashes. The unit test and
+the artifact disagreed, and only the artifact is shipped.
+
+And nothing wrong was in the zip, so there was no symptom to notice.
+`Select-ShippingPaths` filters the file list before the archive is built, which
+is why the package was correct while the backstop behind it was inert. A guard
+that has never fired is indistinguishable from a guard that cannot fire, and
+the only way to tell those apart is to make it fire on purpose.
+
+**How it was found.** By reading the step's own output instead of its exit
+status. The contents listing is printed for a person to skim, and it carried
+the evidence in plain sight, fourteen times.
+
+**What now prevents it.** `Test-PackageEntries`, a pure function that rejects
+any entry name containing a backslash, then normalises and applies the
+directory and extension rules to the normalised copy, so a name that gets past
+the first check is still held to the second. Six selftest cases, two of which
+(`backslash entry names`, `a doc slipped in, backslashed`) are the exact shape
+the archive produced and would have passed the old check.
+
+The check was committed one commit **before** the builder was fixed, on
+purpose, so that `package` ran against a real archive and refused, naming
+fourteen entries and deleting the zip. Commit `70bbf2a` is that red run. The
+commit after it is the green one.
+
+**What it does not cover.** What Chrome does when handed an archive with
+backslash entry names was never established, and is now moot because no such
+archive will be produced. If the question returns, the test is to list the
+entries with a reader that is not the library that wrote them.
+
 ## Unverified paths
 
 Written down rather than remembered, because invariant 1 is the one that keeps
@@ -402,6 +461,13 @@ whatever is left.
       notice is a message nobody has read.
 
 ### Confirmed, so that they are not re-litigated
+
+- **2026-09-13, the package step's refusals.** Two have executed against real
+  state rather than a fixture: the dirty-tree refusal, which named `build.ps1`,
+  and the wrong-package refusal, which named fourteen backslashed entry names
+  and deleted the archive it had just written. Still never executed: the
+  no-commits refusal, and the refusal on a zip that already exists for that
+  version.
 
 - **2026-09-13, the click guard.** With the inspector open, clicking a link on
   `connectedgeek.net` froze the reading and stayed on the page.

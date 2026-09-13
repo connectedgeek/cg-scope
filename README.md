@@ -36,6 +36,7 @@ Reload the page too, or you will debug a version that is no longer on disk.
 .\build.ps1 check      guards: version, version bump, permissions, no network
 .\build.ps1 selftest   proves those guards can fail, against fixtures
 .\build.ps1 version    the version, from manifest.json, its only home
+.\build.ps1 package    everything check does, then the zip, then reads it back
 ```
 
 `check` passing does not mean the extension works. It means the code is allowed

@@ -1134,32 +1134,34 @@ function Invoke-Package {
         return 1
     }
 
-    $staging = Join-Path ([System.IO.Path]::GetTempPath()) ('cg-scope-pkg-' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $staging -Force | Out-Null
-    try {
-        foreach ($rel in $ship) {
-            $src = Join-Path $RepoRoot ($rel -replace '/', '\')
-            $dst = Join-Path $staging ($rel -replace '/', '\')
-            $dstDir = Split-Path -Parent $dst
-            if (-not (Test-Path -LiteralPath $dstDir)) {
-                New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
-            }
-            Copy-Item -LiteralPath $src -Destination $dst -Force
-        }
+    if (-not (Test-Path -LiteralPath $distDir)) {
+        New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+    }
 
-        if (-not (Test-Path -LiteralPath $distDir)) {
-            New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+    # Each entry is written with its name stated here, in sorted order, rather
+    # than by CreateFromDirectory walking a staging copy.
+    #
+    # CreateFromDirectory derives entry names from the filesystem and stamps the
+    # platform separator into them, so on Windows it produced names like
+    # src\popup\popup.js. The ZIP format specifies forward slashes; a name with
+    # backslashes is not a path to anything on a machine that does not use them.
+    # See defect log entry 5 in CLAUDE.md.
+    #
+    # Naming each entry explicitly means the archive says what this script says
+    # rather than what the filesystem says. $ship already holds forward-slash
+    # relative paths, so there is nothing to convert, and the temporary staging
+    # directory went away with the call that needed it.
+    $archive = [System.IO.Compression.ZipFile]::Open(
+        $zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($rel in ($ship | Sort-Object)) {
+            $src = Join-Path $RepoRoot ($rel -replace '/', '\')
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $src, $rel,
+                [System.IO.Compression.CompressionLevel]::Optimal)
         }
-        [System.IO.Compression.ZipFile]::CreateFromDirectory(
-            $staging, $zipPath,
-            [System.IO.Compression.CompressionLevel]::Optimal,
-            $false)
     }
-    finally {
-        if (Test-Path -LiteralPath $staging) {
-            Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
+    finally { $archive.Dispose() }
 
     # 6. Look inside it. RELEASING.md step 4: not optional, and not satisfied by
     #    the build printing "done". The zip is opened and read back.
