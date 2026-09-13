@@ -824,6 +824,46 @@ Deliberately absent:
             $failures++
         }
 
+        # --- Case 10b: what is allowed inside the package --------------------
+        # These cases exist because the inline version of this check shipped
+        # passing and unable to fail. The 'backslashed' cases are the ones that
+        # matter: they are the exact shape the archive actually produced, and
+        # the old check returned clean on them.
+        $pkgCases = @(
+            @{ Name = 'clean, forward slashes';
+               E = @('manifest.json', 'src/popup/popup.js', 'icons/icon16.png');
+               ExpectClean = $true }
+            @{ Name = 'backslash entry names';
+               E = @('manifest.json', 'src\popup\popup.js', 'icons\icon16.png');
+               ExpectClean = $false }
+            @{ Name = 'a doc slipped in';
+               E = @('manifest.json', 'docs/RELEASING.md');
+               ExpectClean = $false }
+            @{ Name = 'a doc slipped in, backslashed';
+               E = @('manifest.json', 'docs\RELEASING.md');
+               ExpectClean = $false }
+            @{ Name = 'no manifest';
+               E = @('src/popup/popup.js');
+               ExpectClean = $false }
+            @{ Name = 'nothing at all';
+               E = @();
+               ExpectClean = $false }
+        )
+
+        foreach ($pc in $pkgCases) {
+            $cases++
+            $probs = @(Test-PackageEntries -Entries $pc.E)
+            $clean = ($probs.Count -eq 0)
+            if ($clean -eq $pc.ExpectClean) {
+                Write-Host ("  pass  package entries '{0}' -> clean={1}" -f $pc.Name, $clean) -ForegroundColor Green
+            } else {
+                Write-Host ("  FAIL  package entries '{0}': expected clean={1}, got clean={2}" -f `
+                            $pc.Name, $pc.ExpectClean, $clean) -ForegroundColor Red
+                foreach ($pp in $probs) { Write-Host ("        {0}" -f $pp) -ForegroundColor DarkGray }
+                $failures++
+            }
+        }
+
         # --- Case 11: the disclosure gate ------------------------------------
         # This is the gate that was written in bold in two documents on the
         # previous project and walked past anyway. It has to be provably able
@@ -948,6 +988,57 @@ function Test-DisclosuresClear {
             Reason = ("{0} unresolved item(s) under ## Pending" -f $items.Count) }
     }
     return [pscustomobject]@{ Clear = $true; Items = @(); Reason = 'nothing pending' }
+}
+
+# ---------------------------------------------------------------------------
+# What is allowed to be inside the package
+# ---------------------------------------------------------------------------
+# Separated from Invoke-Package so it can be tested against entry names without
+# building an archive.
+#
+# The first version of this check lived inline and compared entry names against
+# patterns written with forward slashes. The names it was handed contained
+# backslashes, because .NET's CreateFromDirectory stamps the platform separator
+# into the archive on Windows. Three of its patterns therefore could not match
+# anything, ever. It passed on every run and had never been capable of failing,
+# which is the definition of decoration. See defect log entry 5 in CLAUDE.md.
+function Test-PackageEntries {
+    param([string[]] $Entries)
+
+    $problems = New-Object System.Collections.ArrayList
+
+    if (-not $Entries -or $Entries.Count -eq 0) {
+        [void]$problems.Add('the package is empty')
+        return $problems.ToArray()
+    }
+
+    # The ZIP format specifies forward slashes. An entry named with backslashes
+    # is not a path to anything on a machine that does not use them, and it is
+    # also what blinded the directory checks below.
+    foreach ($e in $Entries) {
+        if ($e -like '*\*') {
+            [void]$problems.Add("entry name contains a backslash, which the ZIP format does not use: $e")
+        }
+    }
+
+    # Measured against a normalised copy, so that a name which gets past the
+    # check above in some future version is still held to the rules below
+    # rather than slipping through both.
+    $norm = @($Entries | ForEach-Object { $_.Replace('\', '/') })
+
+    foreach ($n in $norm) {
+        if ($n -like 'docs/*' -or $n -like 'test/*' -or $n -like 'tools/*' -or
+            $n -like 'dist/*' -or $n -like '*.md'   -or $n -like '.git*'   -or
+            $n -like '*.ps1' -or $n -like '*.map'   -or $n -like '.env*') {
+            [void]$problems.Add("contains a file that should not ship: $n")
+        }
+    }
+
+    if ($norm -notcontains 'manifest.json') {
+        [void]$problems.Add('no manifest.json inside the package')
+    }
+
+    return $problems.ToArray()
 }
 
 function Invoke-Package {
@@ -1075,11 +1166,6 @@ function Invoke-Package {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
         $entries = @($zip.Entries | ForEach-Object { $_.FullName })
-        $bad = @($entries | Where-Object {
-            $_ -like 'docs/*' -or $_ -like 'test/*' -or $_ -like 'tools/*' -or
-            $_ -like '*.md' -or $_ -like '.git*' -or $_ -like '*.ps1' -or
-            $_ -like '*.map' -or $_ -like '.env*'
-        })
 
         $manifestEntry = $zip.Entries | Where-Object { $_.FullName -eq 'manifest.json' }
         $packagedVersion = $null
@@ -1092,11 +1178,8 @@ function Invoke-Package {
     finally { $zip.Dispose() }
 
     $problems = New-Object System.Collections.ArrayList
-    if ($bad.Count -gt 0) {
-        foreach ($b in $bad) { [void]$problems.Add("contains a file that should not ship: $b") }
-    }
-    if (-not $manifestEntry) { [void]$problems.Add('no manifest.json inside the package') }
-    elseif ($packagedVersion -ne $v.Version) {
+    foreach ($p in (Test-PackageEntries -Entries $entries)) { [void]$problems.Add($p) }
+    if ($manifestEntry -and $packagedVersion -ne $v.Version) {
         # The previous project stamped a stale version onto six binaries and the
         # check that missed it compared file sizes. This compares the bytes that
         # are actually in the artifact.
