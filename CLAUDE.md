@@ -369,6 +369,50 @@ firing it.
 
 ---
 
+## Unverified paths
+
+Written down rather than remembered, because invariant 1 is the one that keeps
+being broken and the number of times it has been raised in conversation is not
+evidence about whether it was done.
+
+Each line is a path that has been reasoned about carefully and **never
+executed**. None of them is known to be broken. None is known to work either,
+and those are different states from "tested".
+
+Clearing a line means doing the thing and seeing the result, then deleting the
+line in the same commit as whatever fix it produced. Outstanding item 10 clears
+whatever is left.
+
+- [ ] **An element at z-index 2147483647.** The overlay sits at 2147483000,
+      deliberately below the maximum so a genuinely higher element stays
+      visible rather than being silently hidden. No page tested so far has one,
+      so the consequence of that choice has never been seen.
+- [ ] **A `transform` on `html`.** The host is attached to `documentElement` to
+      avoid the `body` case, which leaves this one unexercised. It would break
+      fixed positioning and put the overlay in the wrong place.
+- [ ] **A document large enough to trip the 6000-element scan cap.** GitHub's
+      repository page has 1319 elements, so the cap is further away than
+      assumed and the truncation notice has never been shown. Until it is, the
+      notice is a message nobody has read.
+
+### Confirmed, so that they are not re-litigated
+
+- **2026-09-13, the click guard.** With the inspector open, clicking a link on
+  `connectedgeek.net` froze the reading and stayed on the page.
+- **2026-09-13, teardown.** Escape followed by a normal click navigated
+  normally, so the `document` listeners are being removed.
+- **2026-09-13, the clipboard.** `navigator.clipboard.writeText` from an
+  injected classic script, under a click inside a closed shadow root, with no
+  `clipboardWrite` permission declared. Confirmed by pasting the result and
+  comparing it to what the code builds, not by the button saying "Copied". The
+  permission stays out of the manifest.
+- **2026-09-13, a third-party page.** `github.com` rendered the panel correctly
+  and fully styled, which means their content security policy does not block a
+  content script's `<style>` in a shadow root, and their sticky header does not
+  beat the overlay's z-index.
+
+---
+
 ## Settled. Do not raise these.
 
 1. **No backend, ever.** Every number this extension displays is something the

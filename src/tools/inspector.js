@@ -78,6 +78,26 @@
     return '#' + hex.toUpperCase();
   }
 
+  function isTransparent(value) {
+    const m = String(value).match(/^rgba?\(([^)]+)\)$/);
+    if (!m) return false;
+    const parts = m[1].split(/[,\s/]+/).map((s) => parseFloat(s)).filter((n) => Number.isFinite(n));
+    return parts.length > 3 && parts[3] === 0;
+  }
+
+  function isAllZero(value) {
+    const nums = String(value).match(/-?[\d.]+/g);
+    if (!nums || !nums.length) return false;
+    return nums.every((n) => parseFloat(n) === 0);
+  }
+
+  function colorLabel(value) {
+    // "transparent" is a word a person can act on. "rgba(0, 0, 0, 0)" is the
+    // same fact written so that it has to be decoded first.
+    if (isTransparent(value)) return 'transparent';
+    return toHex(value) || String(value);
+  }
+
   function firstFamily(value) {
     const first = String(value).split(',')[0];
     return first ? first.replace(/["']/g, '').trim() : '';
@@ -395,7 +415,7 @@
         label.style.display = 'inline';
         // textContent, never markup. The value is browser-computed here, but
         // the habit is the point.
-        label.textContent = hex || String(value);
+        label.textContent = colorLabel(value);
         cell.appendChild(label);
       }
 
@@ -444,20 +464,48 @@
         // The copy block keeps the original rgb/rgba values rather than the
         // hex shown above, because dropping alpha silently would produce CSS
         // that does not match what is on screen.
-        lastCss = [
-          '/* ' + describe(el) + ' */',
-          'font-family: ' + cs.fontFamily + ';',
-          'font-size: ' + cs.fontSize + ';',
-          'font-weight: ' + cs.fontWeight + ';',
-          'line-height: ' + cs.lineHeight + ';',
-          'letter-spacing: ' + cs.letterSpacing + ';',
-          'color: ' + cs.color + ';',
-          'background-color: ' + cs.backgroundColor + ';',
-          'margin: ' + cs.margin + ';',
-          'padding: ' + cs.padding + ';',
-          'border: ' + cs.borderTopWidth + ' ' + cs.borderTopStyle + ' ' + cs.borderTopColor + ';',
-          'border-radius: ' + cs.borderRadius + ';',
-        ].join('\n');
+        //
+        // Declarations that do nothing are left out. A block containing
+        // `letter-spacing: normal`, `margin: 0px`, `padding: 0px`,
+        // `border-radius: 0px`, a transparent background and a zero-width
+        // border is eleven lines of which five are load-bearing, and the
+        // person pasting it deletes the rest by hand. The count of what was
+        // dropped is stated at the end, because silently returning a subset of
+        // the computed style while calling it "the CSS" would be the same
+        // shape of lie as a truncated list presented as complete.
+        const decls = [];
+        let omitted = 0;
+        const add = (prop, value, keep) => {
+          if (keep === false) { omitted++; return; }
+          decls.push(prop + ': ' + value + ';');
+        };
+
+        const hasBorder = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none';
+
+        add('font-family', cs.fontFamily);
+        add('font-size', cs.fontSize);
+        add('font-weight', cs.fontWeight);
+        add('line-height', cs.lineHeight, cs.lineHeight !== 'normal');
+        add('letter-spacing', cs.letterSpacing, cs.letterSpacing !== 'normal');
+        add('color', cs.color);
+        add('background-color', cs.backgroundColor, !isTransparent(cs.backgroundColor));
+        add('margin', cs.margin, !isAllZero(cs.margin));
+        add('padding', cs.padding, !isAllZero(cs.padding));
+        add(
+          'border',
+          cs.borderTopWidth + ' ' + cs.borderTopStyle + ' ' + cs.borderTopColor,
+          hasBorder
+        );
+        add('border-radius', cs.borderRadius, !isAllZero(cs.borderRadius));
+
+        const lines = ['/* ' + describe(el) + ' */'].concat(decls);
+        if (omitted > 0) {
+          lines.push(
+            '/* ' + omitted + ' ' + (omitted === 1 ? 'property' : 'properties') +
+            ' omitted, all at their default */'
+          );
+        }
+        lastCss = lines.join('\n');
       }
 
       out.copy.addEventListener('click', (ev) => {
