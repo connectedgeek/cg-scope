@@ -88,7 +88,9 @@ already have a previous change.
 not a description of something that runs. Delete this sentence when it is real.
 
 ```
-.\build.ps1 check      lint + tests + guards, no artifacts produced
+.\build.ps1 check      guards, lint and tests. No artifacts produced.
+.\build.ps1 selftest   prove the guards can fail, against fixtures
+.\build.ps1 version    report the extension version from manifest.json
 .\build.ps1 package    everything check does, then produce the zip
 ```
 
@@ -123,6 +125,38 @@ There is no `src/background/`. That is deliberate. See "Settled".
 There is no build or bundling step. What is in `src/` is byte-for-byte what
 Chrome runs, which is also why "the full functionality is discernible from the
 submitted code" is trivially true here.
+
+---
+
+## Versioning
+
+**`manifest.json` `version` is the only place a version literal exists in this
+repository.** Nothing else stores one. Nothing derives one by copying. Anything
+that needs the version at runtime, such as the popup footer, reads
+`chrome.runtime.getManifest().version`.
+
+This is a rule rather than a preference because the alternative already cost
+real debugging on the previous project: a version file silently failed to
+update, the build stamped the stale value onto six binaries, and two different
+programs shipped carrying one version number. The check that missed it compared
+**file sizes**, which were identical because `0.9.16` and `0.9.17` are both
+seven bytes. One literal cannot disagree with itself.
+
+**Format.** Chrome accepts one to four dot-separated integers, each 0 to 65535,
+with no leading zeros. This is **not** semver. `1.0.0-beta` is invalid,
+`0.01.0` is invalid, build metadata is invalid. `.\build.ps1 check` rejects all
+of those, and the selftest proves it rejects them, because a version guard that
+has never rejected anything is decoration.
+
+**Scheme while unpacked.** Start at `0.1.0`. Bump the minor as each tool in
+Outstanding lands, so the number tracks the plan: `0.2.0` after the ruler,
+`0.3.0` after the inspector, and so on. Patch for fixes. Nobody is consuming
+these numbers, so they exist to answer "which build is this" rather than to
+communicate compatibility.
+
+**First unlisted submission is `1.0.0`**, and from that point the Web Store
+enforces monotonic increase for you, which is the only guard in the release
+procedure you get for free.
 
 ---
 
@@ -198,7 +232,30 @@ survived review, and what now prevents it. Written the day it happens, because
 an entry written a week later is a summary and an entry written the same day
 contains the thing you would not have thought to mention.
 
-*(empty)*
+### 2026-09-13: a file write reported success and left stale bytes on disk
+
+**What it did.** `CLAUDE.md` was edited four times and then written to the
+machine in a single transfer. The transfer reported success with no error and
+the file's modification time on disk moved. The file contained the first three
+edits and not the fourth. The missing content was the attribution convention,
+so nothing downstream would have crashed; the section would simply have been
+absent, and the next person to read the file would have concluded it was never
+written.
+
+**Why it survived.** Nothing about the failure was visible from the outside.
+The tool said written. The byte count was plausible. The modification time had
+moved, which is exactly the signal a person reaches for when hashing feels like
+overkill. This is `LESSONS-LEARNED.md` item 2 reproduced almost exactly, on a
+different machine and a different toolchain, three days after it was written
+down.
+
+**What now prevents it.** Every file written into this repository from outside
+is read back off the disk and hash-compared against the source before anyone
+describes it as written. That comparison is what caught this. Note also that
+re-writing to the same path did **not** fix it: the second attempt reported
+success and left the same stale bytes. The correction required writing from a
+different staging path, so "try again" is not the remedy. "Verify, write from
+somewhere else, verify again" is.
 
 ---
 
@@ -227,7 +284,10 @@ contains the thing you would not have thought to mention.
    tools have stopped changing. Building unpacked does not make that harder.
 6. **No build or transform step.** The only reason to bundle is dependencies,
    and there are none.
-7. **Out of scope, permanently unless the single purpose sentence is rewritten
+7. **One version literal, in `manifest.json`, read at runtime everywhere else.**
+   See "Versioning". Do not add a version constant to a source file, a
+   package file, a build script or a document, however convenient it looks.
+8. **Out of scope, permanently unless the single purpose sentence is rewritten
    first:** page copying, AI page rewriting, annotation and drawing, a stored
    swipe-file or screenshot library, email or copy generation, focus and
    wellness tooling, affiliate placements. Each of these is a second purpose.
@@ -285,7 +345,19 @@ Each item names **what proves it**, because an item without that is a wish.
 - Permissions are justified in this file and in `manifest.json`, and both say
   the same thing.
 
-### Commit attribution
+### Attribution
+
+Every source file carries a short header naming what it is and who wrote it.
+The header **never** contains a version number; see "Versioning".
+
+```js
+// CG Scope: <what this file is, in one line>
+//
+// Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+// Co-Authored-By: Connected Geek, LLC <support@connectedgeek.net>
+```
+
+The same two lines close every commit message:
 
 ```
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
