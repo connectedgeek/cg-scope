@@ -61,7 +61,7 @@
   // rather than silently hidden behind us.
   const Z_INDEX = '2147483000';
 
-  function makeHost(id) {
+  function makeHost(id, pointerEvents) {
     const host = document.createElement('cg-scope-overlay');
     host.setAttribute('data-cg-tool', id);
 
@@ -83,7 +83,13 @@
       opacity: '1',
       transform: 'none',
       filter: 'none',
-      'pointer-events': 'auto',
+      // 'auto' for a tool that is itself the interaction surface, such as the
+      // ruler's drag. 'none' for a tool that needs to see what is underneath
+      // it: with 'auto', document.elementFromPoint returns this host rather
+      // than the page element the user is pointing at, which makes inspection
+      // impossible. A tool using 'none' listens on document instead, and sets
+      // pointer-events: auto on its own panel so its buttons still work.
+      'pointer-events': pointerEvents === 'none' ? 'none' : 'auto',
     };
     for (const [prop, val] of Object.entries(rules)) {
       host.style.setProperty(prop, val, 'important');
@@ -94,6 +100,71 @@
     // child position relative to body instead of the viewport.
     document.documentElement.appendChild(host);
     return host;
+  }
+
+  // Gap between the thing being described and the panel describing it.
+  const GAP = 10;
+
+  /**
+   * Position a panel beside a rectangle instead of on top of it.
+   *
+   * Shared rather than copied into each tool, because two near-identical
+   * implementations diverge and then nobody can reconstruct why two panels
+   * behave differently. See LESSONS-LEARNED.md item 9.
+   *
+   * Candidates are tried in order and the first that fits entirely in the
+   * viewport wins. If none fits, which needs a rectangle close to the size of
+   * the window, the position is clamped into view and allowed to overlap: a
+   * panel you cannot see is worse than one in the way.
+   *
+   * `panel` must be absolutely positioned inside a host that spans the
+   * viewport, so that its coordinates and the rectangle's are the same space.
+   *
+   * The panel stays where it is unless it would actually cover the rectangle
+   * or has fallen outside the viewport. Repositioning on every update looks
+   * responsive and is unusable: the inspector's panel moved on every hover,
+   * so reaching its Copy button meant chasing it around the screen. A panel
+   * that only moves when it is in the way is still correct and stops being a
+   * moving target. Pass { stable: false } for the rare case that wants the
+   * panel glued to the rectangle.
+   */
+  function placeBeside(panel, rect, opts) {
+    const pw = panel.offsetWidth;
+    const ph = panel.offsetHeight;
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+
+    if (!opts || opts.stable !== false) {
+      // Measured rather than read back from style, so that a panel which has
+      // never been positioned in script still reports where CSS put it.
+      const pr = panel.getBoundingClientRect();
+      const fits = pr.left >= 0 && pr.top >= 0 && pr.right <= vw && pr.bottom <= vh;
+      const clear =
+        pr.right + GAP <= rect.left ||
+        pr.left >= rect.left + rect.width + GAP ||
+        pr.bottom + GAP <= rect.top ||
+        pr.top >= rect.top + rect.height + GAP;
+      if (fits && clear) return;
+    }
+
+    const candidates = [
+      [rect.left, rect.top + rect.height + GAP],  // below, left edges aligned
+      [rect.left, rect.top - ph - GAP],           // above, left edges aligned
+      [rect.left + rect.width + GAP, rect.top],   // to the right
+      [rect.left - pw - GAP, rect.top],           // to the left
+    ];
+
+    for (const [cx, cy] of candidates) {
+      if (cx >= 0 && cy >= 0 && cx + pw <= vw && cy + ph <= vh) {
+        panel.style.left = cx + 'px';
+        panel.style.top = cy + 'px';
+        return;
+      }
+    }
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    panel.style.left = clamp(rect.left, 0, Math.max(0, vw - pw)) + 'px';
+    panel.style.top = clamp(rect.top + rect.height + GAP, 0, Math.max(0, vh - ph)) + 'px';
   }
 
   function close(id) {
@@ -132,7 +203,7 @@
    * build(shadow, api) populates the shadow root. It may return a function,
    * which is called on close.
    */
-  function toggle(id, build) {
+  function toggle(id, build, opts) {
     if (open.has(id)) {
       close(id);
       return false;
@@ -142,12 +213,19 @@
     // events is a bug that looks like a frozen page.
     closeAll();
 
-    const host = makeHost(id);
+    const options = opts || {};
+    const host = makeHost(id, options.pointerEvents);
     const shadow = host.attachShadow({ mode: 'closed' });
 
     const api = {
       id,
       close: () => close(id),
+      // Exposed because a tool listening on `document` needs to recognise its
+      // own UI. Events originating inside a closed shadow root are retargeted
+      // to the host when observed from outside it, so `ev.target === api.host`
+      // is how a document-level handler says "this click was mine".
+      host,
+      placeBeside,
     };
 
     const onKey = (ev) => {
@@ -181,6 +259,7 @@
     toggle,
     close,
     closeAll,
+    placeBeside,
     isOpen: (id) => open.has(id),
     Z_INDEX,
   };

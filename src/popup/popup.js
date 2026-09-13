@@ -23,6 +23,12 @@ const TOOLS = [
     hint: 'Drag to measure',
     files: ['src/shared/overlay.js', 'src/tools/ruler.js'],
   },
+  {
+    id: 'inspector',
+    label: 'Inspector',
+    hint: 'Elements, colors, fonts',
+    files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/inspector.js'],
+  },
 ];
 
 function showVersion() {
