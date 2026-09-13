@@ -45,8 +45,8 @@
       .box.idle { display: none; }
       .readout {
         position: absolute;
+        left: 12px;
         top: 12px;
-        right: 12px;
         min-width: 132px;
         padding: 10px 12px;
         border-radius: 6px;
@@ -106,6 +106,49 @@
     let startX = 0;
     let startY = 0;
 
+    // Gap between the measured box and the readout, so the two do not touch
+    // and the box border stays legible against the panel edge.
+    const GAP = 10;
+
+    /**
+     * Keep the readout beside the measurement rather than on top of it.
+     *
+     * A fixed corner does not work: the first real use of this tool measured
+     * something in the top right and the panel covered the corner being
+     * measured. Any fixed position has a region of the screen it ruins.
+     *
+     * Candidates are tried in order and the first one that fits entirely in
+     * the viewport wins, so the panel moves out of the way rather than
+     * hugging one side. If nothing fits, which needs a box nearly the size of
+     * the window, the position is clamped into view and allowed to overlap,
+     * because a readout you cannot see is worse than one in the way.
+     */
+    function placeReadout(bx, by, bw, bh) {
+      const rw = readout.offsetWidth;
+      const rh = readout.offsetHeight;
+      const vw = document.documentElement.clientWidth;
+      const vh = document.documentElement.clientHeight;
+
+      const candidates = [
+        [bx, by + bh + GAP],        // below, left edges aligned
+        [bx, by - rh - GAP],        // above, left edges aligned
+        [bx + bw + GAP, by],        // to the right
+        [bx - rw - GAP, by],        // to the left
+      ];
+
+      for (const [cx, cy] of candidates) {
+        if (cx >= 0 && cy >= 0 && cx + rw <= vw && cy + rh <= vh) {
+          readout.style.left = cx + 'px';
+          readout.style.top = cy + 'px';
+          return;
+        }
+      }
+
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      readout.style.left = clamp(bx, 0, Math.max(0, vw - rw)) + 'px';
+      readout.style.top = clamp(by + bh + GAP, 0, Math.max(0, vh - rh)) + 'px';
+    }
+
     function paint(x, y, w, h) {
       box.style.left = x + 'px';
       box.style.top = y + 'px';
@@ -117,6 +160,7 @@
       out.h.textContent = Math.round(h);
       out.x.textContent = Math.round(x);
       out.y.textContent = Math.round(y);
+      placeReadout(x, y, w, h);
     }
 
     function onDown(ev) {
