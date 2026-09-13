@@ -1,0 +1,29 @@
+# Normalise line endings in the repository AND in the working copy.
+#
+# Why: Git on Windows defaults to core.autocrlf=true, which rewrites LF to CRLF
+# on checkout. Three consequences this project cares about:
+#
+#   1. A file's bytes on disk stop matching its bytes in the repository, so
+#      hash comparison between what was written and what is there stops being
+#      a valid check. Invariant 2 says verify by content; that is only
+#      meaningful if the content is stable.
+#   2. The packaged zip's contents would depend on a local git setting rather
+#      than on the commit, so two people building the same commit could produce
+#      two different artifacts.
+#   3. Diffs become noise the first time a file is touched on another machine.
+#
+# LF everywhere. Chrome does not care, PowerShell 5.1 does not care, and it
+# keeps "compare the bytes" a real instruction.
+
+* text=auto eol=lf
+
+# Binary, never line-ending converted, never diffed as text
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.zip  binary
+*.crx  binary
+*.pem  binary

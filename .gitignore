@@ -1,0 +1,31 @@
+# Written in the first commit, not the tenth. On the previous project a
+# `git add -A` during a release swept a local scratch folder into the same
+# commit as the privacy policy, because nothing was ignoring it.
+
+# Build output and packages
+/dist/
+/build/
+*.zip
+
+# Private key for a packed .crx. Losing control of this means losing control
+# of the extension ID.
+*.pem
+
+# Local working files
+/scratch/
+/notes/
+*.local.*
+
+# Environment
+.env
+.env.*
+
+# Dependencies, should any ever appear
+node_modules/
+
+# Editor and OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
