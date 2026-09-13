@@ -39,7 +39,21 @@
   }
 
   const STORE_KEY = 'recentColors';
+  const PREF_KEY = 'pickerPrefs';
   const KEEP = 12;
+
+  // Copying on sample defaults to OFF.
+  //
+  // It was written defaulting to ON, on the reasoning that the point of
+  // sampling a colour is to use it somewhere else. That reasoning is fine and
+  // it was not the question being asked: the rows already copy on click, and
+  // the actual problem was that nothing said so. Turning on a behaviour that
+  // overwrites the user's clipboard, because code to do it happened to exist,
+  // is sunk cost wearing a decision's clothes.
+  //
+  // When it is on it is never silent: the panel says which format was copied,
+  // so nothing is lost from the clipboard without the reason being visible.
+  const DEFAULT_PREFS = { autoCopy: false, format: 'hex' };
 
   function hexToRgb(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
@@ -171,6 +185,39 @@
         }
         .btn:hover { background: var(--cgp-bg); }
 
+        /* The rows have always copied on click and nothing said so, which is
+           the same defect as a tool that silently does nothing: the behaviour
+           existed and was invisible. */
+        .tip {
+          margin: 6px 2px 0;
+          font-size: 10px;
+          color: var(--cgp-muted);
+        }
+
+        .opt {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 9px;
+          padding: 7px 10px;
+          border: 1px solid var(--cgp-line);
+          border-radius: 5px;
+          font-size: 12px;
+          cursor: pointer;
+        }
+        .opt input { margin: 0; cursor: pointer; accent-color: var(--cgp-accent); }
+        .opt span { flex: 1 1 auto; }
+        .opt select {
+          font: inherit;
+          padding: 2px 4px;
+          border: 1px solid var(--cgp-line);
+          border-radius: 4px;
+          background: var(--cgp-bg);
+          color: inherit;
+          cursor: pointer;
+        }
+        .opt select:disabled { opacity: 0.45; cursor: default; }
+
         h2 {
           margin: 14px 0 6px;
           font-size: 10px;
@@ -217,7 +264,17 @@
           <button class="val" type="button" id="v-rgb"><b>RGB</b><span>-</span></button>
           <button class="val" type="button" id="v-hsl"><b>HSL</b><span>-</span></button>
         </div>
+        <p class="tip">Click a value to copy it.</p>
         <button class="btn" type="button" id="again">Sample a color</button>
+        <label class="opt">
+          <input type="checkbox" id="auto">
+          <span>Copy on sample</span>
+          <select id="fmt">
+            <option value="hex">HEX</option>
+            <option value="rgb">RGB</option>
+            <option value="hsl">HSL</option>
+          </select>
+        </label>
         <h2>Recent</h2>
         <div class="recents" id="recents"></div>
         <p class="note" id="note"></p>
@@ -229,11 +286,17 @@
       const vRgb = $('v-rgb');
       const vHsl = $('v-hsl');
       const again = $('again');
+      const auto = $('auto');
+      const fmt = $('fmt');
       const recents = $('recents');
       const note = $('note');
 
       let currentHex = null;
       let picking = false;
+      let prefs = Object.assign({}, DEFAULT_PREFS);
+      // The three representations of the current colour, kept so that the
+      // auto-copy does not have to re-derive or re-parse what is on screen.
+      let values = { hex: '', rgb: '', hsl: '' };
 
       function setNote(text, warn) {
         note.textContent = text || '';
@@ -259,13 +322,54 @@
         if (!rgb) return;
         const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
 
+        values = {
+          hex: currentHex,
+          rgb: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+          hsl: `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`,
+        };
+
         swatch.style.background = currentHex;
         swatch.style.color = isLight(rgb.r, rgb.g, rgb.b) ? '#1f2328' : '#ffffff';
         swatch.textContent = currentHex;
 
-        vHex.querySelector('span').textContent = currentHex;
-        vRgb.querySelector('span').textContent = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
-        vHsl.querySelector('span').textContent = `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
+        vHex.querySelector('span').textContent = values.hex;
+        vRgb.querySelector('span').textContent = values.rgb;
+        vHsl.querySelector('span').textContent = values.hsl;
+      }
+
+      // --- preferences ------------------------------------------------------
+      function applyPrefs() {
+        auto.checked = !!prefs.autoCopy;
+        fmt.value = prefs.format;
+        fmt.disabled = !prefs.autoCopy;
+      }
+
+      async function loadPrefs() {
+        try {
+          const got = await chrome.storage.local.get(PREF_KEY);
+          const saved = got && got[PREF_KEY];
+          if (saved && typeof saved === 'object') {
+            // Merged onto the defaults rather than used as-is, so that a value
+            // stored by an older version with fewer keys, or a format that no
+            // longer exists, cannot leave the tool in a state it cannot render.
+            prefs = Object.assign({}, DEFAULT_PREFS, saved);
+            if (!['hex', 'rgb', 'hsl'].includes(prefs.format)) {
+              prefs.format = DEFAULT_PREFS.format;
+            }
+          }
+        } catch (err) {
+          console.error('[CG Scope] could not read picker preferences:', err);
+        }
+        applyPrefs();
+      }
+
+      async function savePrefs() {
+        try {
+          await chrome.storage.local.set({ [PREF_KEY]: prefs });
+        } catch (err) {
+          console.error('[CG Scope] could not save picker preferences:', err);
+          setNote('That setting will not persist: ' + err.message, true);
+        }
       }
 
       // --- recents, the feature that justifies the storage permission -------
@@ -353,6 +457,19 @@
           const result = await new globalThis.EyeDropper().open();
           show(result.sRGBHex);
           await remember(result.sRGBHex.toUpperCase());
+
+          if (prefs.autoCopy) {
+            const text = values[prefs.format] || values.hex;
+            try {
+              await navigator.clipboard.writeText(text);
+              // Never silent. This overwrote whatever the user had on the
+              // clipboard, and they are entitled to know what replaced it.
+              setNote(prefs.format.toUpperCase() + ' copied: ' + text);
+            } catch (err2) {
+              setNote('Sampled, but the clipboard write failed: ' + err2.name, true);
+              console.error('[CG Scope] clipboard write failed:', err2);
+            }
+          }
         } catch (err) {
           // Cancelling is a normal outcome, not a failure, and must not be
           // reported as one.
@@ -390,6 +507,20 @@
         if (currentHex) copyValue(vHsl, vHsl.querySelector('span').textContent);
       });
 
+      auto.addEventListener('click', (ev) => ev.stopPropagation());
+      auto.addEventListener('change', () => {
+        prefs.autoCopy = auto.checked;
+        fmt.disabled = !prefs.autoCopy;
+        savePrefs();
+      });
+
+      fmt.addEventListener('click', (ev) => ev.stopPropagation());
+      fmt.addEventListener('change', () => {
+        prefs.format = fmt.value;
+        savePrefs();
+      });
+
+      loadPrefs();
       loadRecents();
 
       return () => {

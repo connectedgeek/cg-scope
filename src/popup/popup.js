@@ -35,6 +35,12 @@ const TOOLS = [
     hint: 'Sample any pixel',
     files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/colorpicker.js'],
   },
+  {
+    id: 'page',
+    label: 'Page report',
+    hint: 'Weight, images, alt text',
+    files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/page.js'],
+  },
 ];
 
 function showVersion() {

@@ -117,8 +117,12 @@
     .cgp-close:hover, .cgp-grip:hover { color: var(--cgp-ink); }
     .cgp-grip svg, .cgp-close svg { display: block; }
 
-    .cgp-body { overflow: auto; overscroll-behavior: contain; }
-    .cgp-pane { display: none; padding: 12px; }
+    /* Vertical only. A panel that scrolls sideways is a panel whose content
+       escaped, and the scrollbar hides the fact by making it look deliberate.
+       The page report shipped with its size column pushed off the right edge
+       and a scrollbar underneath implying that was the design. */
+    .cgp-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+    .cgp-pane { display: none; padding: 12px; min-width: 0; }
     .cgp-pane.is-on { display: block; }
   `;
 
@@ -145,6 +149,15 @@
 
     const root = document.createElement('div');
     root.className = 'cgp';
+
+    // Tools set their own width. 348 suits the inspector's two-column cells;
+    // the page report needs more because its rows carry a dimension, a size
+    // and a filename on the same line. Clamped so that a tool cannot ask for
+    // something wider than the window it floats in.
+    if (opts.width) {
+      const max = Math.max(280, document.documentElement.clientWidth - 32);
+      root.style.width = Math.min(opts.width, max) + 'px';
+    }
 
     const head = document.createElement('div');
     head.className = 'cgp-head';

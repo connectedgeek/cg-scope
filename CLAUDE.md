@@ -184,8 +184,7 @@ Web Store submission if there ever is one.
 |---|---|
 | `activeTab` | Every tool. Grants access to the current tab at the moment the toolbar icon is clicked, and expires. No install warning, no host list. |
 | `scripting` | `chrome.scripting.executeScript`, which is how a tool module reaches the page. `activeTab` grants the right; this is the API that exercises it. |
-| `storage` | The recent-colors list and tool preferences, in `chrome.storage.local`. |
-| `downloads` (optional) | **Only** the image inventory's save action, requested at the moment it is used. May prove unnecessary; see below. |
+| `storage` | The color picker's recent-colors list and its copy-on-sample preference, in `chrome.storage.local`. |
 
 **Deliberately absent, and each absence is a decision:**
 
@@ -202,14 +201,21 @@ Web Store submission if there ever is one.
 - **No `debugger`.** It would give a cleaner full-page capture path, and this
   is not a screenshot tool.
 
-**Open questions on permissions, to be closed by running something:**
+- **No `downloads`.** It was declared as optional in 0.1.0 for an image
+  inventory that would save files, and removed in 0.6.0 without ever being
+  used. Saving every image on a page is the feature that turns an inspector
+  into a page copier, the page report lists images instead, and the browser's
+  own context menu saves one. Three permissions remain and all three are
+  exercised by code that exists.
 
-- Is `downloads` needed at all? An anchor with the `download` attribute saves
-  same-origin files with no permission. Cross-origin it typically navigates
-  instead. Test against a real client site before declaring the permission.
-- Is `storage` needed, or does `chrome.storage.session` suffice? Keeping
-  `local` so a color sampled yesterday survives. First line to drop under
-  pressure.
+**A limit of the permission guard, found in 0.5.0 and worth remembering:**
+
+`storage` sat in the manifest from 0.1.0 to 0.5.0 with a justification written
+here and no code using it. The guard did not object, because it checks that a
+row exists in the table above, not that the feature was built. It cannot check
+that. The remedy is that a permission is added in the same commit as the
+feature that needs it, and `downloads` was the standing counter-example until
+it was removed.
 
 ---
 
