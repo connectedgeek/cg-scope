@@ -470,12 +470,42 @@ Clearing a line means doing the thing and seeing the result, then deleting the
 line in the same commit as whatever fix it produced. Outstanding item 10 clears
 whatever is left.
 
+- [ ] **A page that is itself using the top layer.** A modal `<dialog>` or a
+      fullscreen element occupies the same layer the overlay now sits in, and
+      the later entrant wins. `test/hostile.html` does not produce this and
+      should gain a fifth trap that does.
 - [ ] **A document large enough to trip the 6000-element scan cap.** GitHub's
       repository page has 1319 elements, so the cap is further away than
       assumed and the truncation notice has never been shown. Until it is, the
       notice is a message nobody has read.
 
 ### Confirmed, so that they are not re-litigated
+
+- **2026-09-13, the top layer fix, 0.8.0.** Four checks, all in Chrome. Trap 2
+  with the transform on: a drag reporting `X, Y = 145, 230` drew at CSS 144.9,
+  229, so the rectangle lands on the reported coordinates instead of nineteen
+  pixels away. Trap 1 with the blocking sheet up and five seconds left on its
+  countdown: a 1206 x 317 drag completed, where the same attempt before the fix
+  produced nothing for the full fifteen seconds, and the overlay renders at full
+  colour while the page behind it is washed grey, which is what painting above
+  the sheet rather than under it looks like. Trap 3, shouty CSS: the Inspector
+  panel is unchanged, so the top layer did not alter how the shadow root relates
+  to the page. And all four tools on `connectedgeek.net`, which is the check
+  that mattered most, because the fix changes how every tool is positioned in
+  order to repair two conditions.
+
+  The specification claim in the section below is therefore no longer only a
+  specification claim for the two cases tested. It remains untested for a page
+  that is itself using the top layer.
+
+- **2026-09-13, a deliberate reversal that came with it.** `Z_INDEX` sat below
+  the maximum specifically so that an element the page placed higher would stay
+  visible rather than be hidden behind this overlay. The top layer discards
+  that: CG Scope now covers page furniture at any z-index, the maximum
+  included. That is correct for a tool whose job is to sit over a page and be
+  used, and it is a reversal of a stated decision rather than a refinement of
+  it, so it is recorded in the header of `src/shared/overlay.js` and beside the
+  constant, whose old rationale would otherwise have read as current and true.
 
 - **2026-09-13, trap 1, an element at z-index 2147483647.** Confirmed in two
   halves, and the second half is the one that matters.
@@ -639,7 +669,7 @@ with page-wide colours and fonts, the colour picker, and the page report.
     colours, and a page that rewrites its DOM after load.
 11. **Decide whether to move to an unlisted listing.** Not before item 10.
 
-### The known fix for traps 1 and 2, no longer held
+### The known fix for traps 1 and 2, built and confirmed in 0.8.0
 
 Both the maximum-z-index case and the transform-on-`html` case have the same
 remedy: put the overlay host in the **top layer** with the Popover API
@@ -655,14 +685,17 @@ are recorded under Confirmed above: the transform case puts the drawing in the
 wrong place while the numbers stay right, and the maximum-z-index case makes
 the tool silently unreachable when the covering element takes input.
 
-Two things to be honest about before it is written. The claim that a top-layer
-element is not positioned relative to a transformed ancestor comes from the
-specification and has not been tested here, so the fix is not proven until it
-has been run against both traps. And `showPopover` on a host element inside an
-arbitrary page is a path this extension has never executed, which puts it in
-the same category as everything else on the Unverified list. It is a fix with a
-test waiting for it, which is the right order, but it is not a fix that can be
-called done on the strength of being written.
+Both caveats written here before it was built have been discharged. The claim
+that a top-layer element is not positioned relative to a transformed ancestor
+was taken from the specification and is now observed against trap 2, and
+`showPopover` on a host element inside an arbitrary page has executed, on the
+fixture and on `connectedgeek.net`. See Confirmed above for the measurements.
+
+What is still only reasoning: the behaviour when the page itself is using the
+top layer, with a modal `<dialog>` or something fullscreen. The later entrant
+wins and this extension is not guaranteed to be it. No fixture produces that
+condition yet, so it is not on the Unverified list either, which is worse than
+being on it.
 
 ---
 

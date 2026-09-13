@@ -140,19 +140,27 @@
   <h2>1. An element at the maximum z-index</h2>
   <p>
     Run: <strong>Ruler</strong> or <strong>Inspector</strong>.
-    <span class="expect">Confirmed 2026-09-13 with the first button. The
-    overlay does sit underneath and is tinted by whatever the covering element
-    paints, but it stays usable, and the panel barely shows it because the
-    panel is nearly black already. The expectation printed here previously said
-    "unusable", which was wrong: that sheet sets
-    <code>pointer-events: none</code> and blocks nothing.</span>
+    <span class="expect"><strong>Now expected to pass, as of 0.8.0.</strong> The
+    overlay host is put in the top layer with the Popover API, so it paints
+    above this sheet regardless of z-index and still receives input. Both
+    buttons should leave the tool fully usable and at full colour while the
+    page behind goes grey.</span>
   </p>
   <p>
-    <span class="expect">The second button is the condition that matters: the
-    same sheet taking input, which is what a cookie wall or a modal backdrop
-    does. It removes itself after 15 seconds, because while it is up nothing on
-    this page can be clicked, including the button that started it. Open the
-    tool <em>first</em>, then start the countdown, then try to drag.</span>
+    <span class="expect">What each button is for. The first raises the sheet
+    with <code>pointer-events: none</code>, which tests painting only. The
+    second raises it taking input, which is what a cookie wall or a modal
+    backdrop does, and is the one that used to make the tool unreachable; it
+    removes itself after 15 seconds because while it is up nothing on this page
+    can be clicked, including the button that started it. Open the tool
+    <em>first</em>, then start the countdown, then drag.</span>
+  </p>
+  <p>
+    <span class="expect">History, so a future pass is measured against the
+    right thing. Before 0.8.0 the first button left the tool usable and merely
+    tinted, and the second made it silently unreachable for the full fifteen
+    seconds. A failure here now means the top layer stopped applying, not that
+    the trap is working.</span>
   </p>
   <button id="b1" type="button" aria-pressed="false">Toggle ceiling</button>
   <button id="b1b" type="button">Blocking ceiling, 15s</button>
@@ -163,10 +171,19 @@
   <h2>2. A transform on the html element</h2>
   <p>
     Run: <strong>Ruler</strong>.
-    <span class="expect">Expected failure: the overlay is positioned against
-    the transformed root rather than the viewport, so measurements are offset
-    or the overlay sits in the wrong place. If it looks correct, the assumption
-    behind attaching to documentElement holds.</span>
+    <span class="expect"><strong>Now expected to pass, as of 0.8.0.</strong> A
+    top-layer element is positioned against the viewport rather than against a
+    transformed ancestor, so the rectangle should land under the cursor and the
+    X and Y in the panel should match where it is drawn.</span>
+  </p>
+  <p>
+    <span class="expect">History. Before 0.8.0 the host was positioned against
+    the transformed root, because a transformed ancestor becomes the containing
+    block for its fixed-position descendants. The numbers stayed correct and
+    only the drawing moved, so the tool reported accurately and could not be
+    aimed: a drag from <code>10, 8</code> drew at CSS x 28.6, matching
+    <code>945 + 0.98 &times; (10 - 945)</code> to within a pixel. If that
+    behaviour returns, the overlay has stopped reaching the top layer.</span>
   </p>
   <button id="b2" type="button" aria-pressed="false">Toggle transform</button>
   <span class="state" id="s2">off</span>

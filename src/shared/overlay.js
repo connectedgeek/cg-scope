@@ -41,6 +41,50 @@
 // the page's tree. Its critical properties are therefore set inline with
 // !important, which outranks any page stylesheet, and `all: initial` clears
 // anything inherited.
+//
+// ---------------------------------------------------------------------------
+// Why the host is also a popover
+// ---------------------------------------------------------------------------
+// Fixed, full-viewport and at a very high z-index is not enough, and on
+// 2026-09-13 both of the ways it is not enough were reproduced deliberately on
+// test/hostile.html rather than waited for.
+//
+// An element at z-index 2147483647 covers this overlay, because this overlay
+// sits at 2147483000 on purpose, so that a genuinely higher element stays
+// visible rather than being silently hidden. When that element also takes
+// pointer events, which any cookie wall or modal backdrop does, the tool
+// becomes unreachable and gives no sign of it: the popup launches it, nothing
+// errors, and the page simply stops responding to the drag.
+//
+// A `transform` on `html` breaks it differently and more confusingly. A
+// transformed ancestor becomes the containing block for its fixed-position
+// descendants, so the host is positioned against the transformed root instead
+// of the viewport. The readings stay correct, because clientX and clientY are
+// viewport coordinates that a transform does not touch. Only the drawing
+// moves, so the tool reports accurately and cannot be aimed.
+//
+// Both are answered by the top layer: elements in it paint above all normal
+// content irrespective of z-index, and are positioned against the viewport
+// rather than against a transformed ancestor. The Popover API is how an
+// ordinary element gets there without being a dialog.
+//
+// What this does NOT do. It does not put the overlay above another top-layer
+// element. A page showing a modal <dialog>, or running something fullscreen,
+// is in the same layer and the later entrant wins. That case has not been
+// tested and nothing here claims it works.
+//
+// What this reverses. The Z_INDEX below was chosen under the maximum
+// specifically so that an element the page had placed higher would stay
+// visible instead of being hidden behind this overlay. The top layer discards
+// that: CG Scope now covers page furniture at any z-index, including the
+// maximum, which is exactly what trap 1 demonstrates. That is the right call
+// for a tool whose entire job is to sit over a page and be used, and it is a
+// reversal rather than an improvement, so it is written here instead of being
+// left for someone to discover from a screenshot.
+//
+// The z-index, the fixed position and the full-viewport size all stay. When
+// showPopover is unavailable or throws, they are the entire mechanism again,
+// which is exactly what shipped through 0.7.0.
 
 (() => {
   'use strict';
@@ -56,9 +100,17 @@
   const state = globalThis[NS] || (globalThis[NS] = {});
   const open = new Map(); // id -> { host, shadow, teardown }
 
-  // Chosen to sit above essentially all page furniture without using the
-  // maximum, so that a genuinely higher element is still possible and visible
-  // rather than silently hidden behind us.
+  // Originally chosen to sit above essentially all page furniture without using
+  // the maximum, so that a genuinely higher element would stay visible rather
+  // than be silently hidden behind us.
+  //
+  // That reasoning no longer describes what happens. Where the top layer is
+  // available this overlay is above everything in normal content, the maximum
+  // included, and the header of this file records that reversal and why it is
+  // wanted. The value is unchanged and still matters: where showPopover is
+  // unavailable or throws, this is the entire mechanism, it is the mechanism
+  // every version up to 0.7.0 shipped on, and under it the original sentence
+  // is true again.
   const Z_INDEX = '2147483000';
 
   function makeHost(id, pointerEvents) {
@@ -99,7 +151,47 @@
     // and some pages apply transforms to body, which would make a fixed-position
     // child position relative to body instead of the viewport.
     document.documentElement.appendChild(host);
+
+    // Then the top layer, where the browser offers it.
+    //
+    // showPopover() requires the element to be in the document, so this cannot
+    // move up with the style rules. The attribute is set immediately before the
+    // call rather than alongside them for the same reason: a popover that is
+    // never shown is display:none by UA rule, and the inline display:block
+    // above would spend the intervening moment arguing with it for no purpose.
+    if (typeof host.showPopover === 'function') {
+      try {
+        host.setAttribute('popover', 'manual');
+        host.showPopover();
+      } catch (err) {
+        // Not fatal, and deliberately not silent. Everything underneath still
+        // applies: the host is fixed, full-viewport and at Z_INDEX, which is
+        // how this worked before and still works on every page with no
+        // transformed root and nothing at the maximum stacking order.
+        console.warn('[CG Scope] top layer unavailable, using z-index only:', err);
+        host.removeAttribute('popover');
+      }
+    }
     return host;
+  }
+
+  // Removing an open popover from the document takes it out of the top layer on
+  // its own, so the explicit hide is belt and braces rather than a requirement.
+  // It is here because a host stranded in the top layer would make the page
+  // unusable and would be a thoroughly confusing thing to debug, and the call
+  // costs nothing.
+  function removeHost(host) {
+    if (!host) return;
+    try {
+      if (host.hasAttribute('popover') && typeof host.hidePopover === 'function') {
+        host.hidePopover();
+      }
+    } catch (err) {
+      // Hiding a popover that is not showing throws. That is not a problem
+      // worth reporting: the removal below is what actually matters, and it
+      // runs either way.
+    }
+    if (host.parentNode) host.parentNode.removeChild(host);
   }
 
   // Gap between the thing being described and the panel describing it.
@@ -183,9 +275,7 @@
     }
 
     document.removeEventListener('keydown', entry.onKey, true);
-    if (entry.host && entry.host.parentNode) {
-      entry.host.parentNode.removeChild(entry.host);
-    }
+    removeHost(entry.host);
     return true;
   }
 
@@ -255,7 +345,7 @@
       // every click on the page.
       console.error('[CG Scope] tool "' + id + '" failed to start:', err);
       document.removeEventListener('keydown', onKey, true);
-      if (host.parentNode) host.parentNode.removeChild(host);
+      removeHost(host);
       return false;
     }
 
