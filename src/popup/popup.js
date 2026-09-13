@@ -36,6 +36,12 @@ const TOOLS = [
     files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/colorpicker.js'],
   },
   {
+    id: 'images',
+    label: 'Images',
+    hint: 'Find, filter, copy',
+    files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/images.js'],
+  },
+  {
     id: 'page',
     label: 'Page report',
     hint: 'Weight, images, alt text',

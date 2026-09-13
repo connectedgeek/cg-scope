@@ -203,6 +203,26 @@
       white-space: nowrap;
     }
 
+    .cgp-btn {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 8px;
+      border: 1px solid var(--cgp-accent);
+      border-radius: 5px;
+      background: var(--cgp-soft);
+      color: inherit;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .cgp-btn:hover { background: var(--cgp-bg); }
+    /* A button that cannot act says so by looking inert. The alternative is a
+       button that does nothing when pressed, which reads as a broken tool
+       rather than an empty selection. */
+    .cgp-btn:disabled { opacity: 0.45; cursor: default; }
+    .cgp-btn:disabled:hover { background: var(--cgp-soft); }
+
     .cgp-tip { margin: 6px 2px 0; font-size: 10px; color: var(--cgp-muted); }
     .cgp-note { margin: 8px 0 0; font-size: 11px; color: var(--cgp-muted); }
     .cgp-note.warn { color: var(--cgp-accent); }
