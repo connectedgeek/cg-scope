@@ -1,12 +1,57 @@
 # Chrome extension traps
 
 Platform behaviour that is not obvious, and the Web Store rules that decide
-whether you ship at all. Checked against Google's current documentation on
-2026-09-11; the policy sections in particular move, so re-read the linked
-pages before a submission rather than trusting this file.
+whether you ship at all. The policy sections in particular move, so re-read the
+linked pages before a submission rather than trusting this file.
 
-Manifest V3 is the only option. Manifest V2 extensions are removed from Chrome
-on 31 August 2026.
+## Verification log
+
+Re-reading the sources is only useful if the result is written down. Otherwise
+the next person re-reads them from scratch and cannot tell what has already
+been settled, or which parts of this file are carried-over memory rather than
+something anyone checked.
+
+**2026-09-13, against Google's live pages.** Three claims confirmed, one
+corrected, one withdrawn.
+
+- **Confirmed.** The Limited Use tightening is real: announced 1 July 2026,
+  effective 1 August 2026, requiring user data to be "strictly necessary to the
+  extension's disclosed single purpose". The same update adds the requirement
+  to proactively disclose a change in data handling after installation.
+  **Note the trap:** the Limited Use policy page itself still carries "Last
+  updated 2022-11-01" and does not mention the change. The substance is in the
+  blog post. Anyone checking only the policy page will conclude the 2026 change
+  does not exist.
+- **Confirmed.** All Chrome Web Store visibility settings, public, unlisted and
+  private, "have the same policy requirements and will go through the same
+  review process". Unlisted is not a lighter path. It changes who can find the
+  item and nothing else.
+- **Confirmed.** Registration requires a one-time fee.
+- **Corrected.** The Manifest V2 paragraph below. The previous wording was
+  wrong about what happens and about a year late on when.
+- **Withdrawn.** A specific dollar figure for the registration fee was quoted
+  in conversation during this project. The documentation does not state one; it
+  appears on the registration screen in the developer dashboard. Do not repeat
+  a number nobody has read off that screen.
+
+---
+
+**Manifest V3 is the only option, and has been for over a year.**
+
+The previous wording here said "Manifest V2 extensions are removed from Chrome
+on 31 August 2026", which conflates two separate events and understates how
+long this has been settled.
+
+| Date | What actually happens |
+|---|---|
+| 24 July 2025 | Manifest V2 disabled everywhere, with Chrome 138. Users can no longer turn them back on. |
+| Chrome 139 | The `ExtensionManifestV2Availability` enterprise policy removed. |
+| 31 August 2026 | Remaining Manifest V2 extensions removed **from the Chrome Web Store**. Copies already installed on Chrome 138 or earlier keep working, without updates. |
+
+Manifest V2 stopped functioning in the browser fourteen months ago, and the
+2026 date is a delisting rather than a shutdown. That date has also already
+passed. None of this changes the decision; it removes a reason to think of it
+as a deadline still ahead.
 
 ---
 
@@ -124,7 +169,7 @@ is declined is the classic never-executed path.
 
 ---
 
-## 4. Limited Use, strengthened 1 August 2026
+## 4. Limited Use, strengthened 1 August 2026 (verified 2026-09-13)
 
 This is the one most likely to catch you out, because it is the opposite of how
 the diagnostic tool was designed.
@@ -237,6 +282,12 @@ fails and the extension carries on looking normal. Check for the error.
   reachable, and it must actually describe what the extension does.
 - **The listing must match the extension.** Screenshots of features that do not
   exist, or a description promising more than it does, is a rejection.
+- **Unlisted is not a lighter path.** Verified 2026-09-13: all visibility
+  settings, public, unlisted and private, "have the same policy requirements
+  and will go through the same review process". Choosing unlisted changes who
+  can find the item. It does not skip review, the privacy practices form, or
+  any program policy. Decide distribution on its merits, not in the hope of an
+  easier submission.
 - **Expect review latency and plan for it.** This is a release constraint, not
   an inconvenience: you cannot hot-fix. A bug that reaches the store stays
   there until a new version is reviewed and rolled out.
@@ -265,6 +316,12 @@ Each of these is a path that is easy to reason about and almost never run.
 
 ## Sources
 
+Checked on 2026-09-13, with the result recorded in the verification log at the
+top of this file rather than left as "I looked at it".
+
+- [Manifest V2 support timeline](https://developer.chrome.com/docs/extensions/develop/migrate/mv2-deprecation-timeline)
+- [Prepare to publish: set up distribution](https://developer.chrome.com/docs/webstore/cws-dashboard-distribution)
+- [Register as a Chrome Web Store developer](https://developer.chrome.com/docs/webstore/register)
 - [The extension service worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)
 - [Migrate to a service worker](https://developer.chrome.com/docs/extensions/develop/migrate/to-service-workers)
 - [Chrome Web Store policy updates: Enhancing user privacy and platform integrity](https://developer.chrome.com/blog/cws-policy-updates-2026)
