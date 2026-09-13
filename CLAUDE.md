@@ -416,6 +416,21 @@ whatever is left.
   and fully styled, which means their content security policy does not block a
   content script's `<style>` in a shadow root, and their sticky header does not
   beat the overlay's z-index.
+- **2026-09-13, hostile page CSS.** `test/hostile.html` trap 3 applies
+  `font-family`, `letter-spacing` and `border-radius: 0` with `!important` to
+  `*`, plus an outline on every `div`. The inspector panel was completely
+  unaffected: its own font, its rounded corners and its cell borders all
+  survived. This is the strongest available test of the shadow root and it is
+  the reason every tool can be trusted on a page it has never seen.
+
+  Two details from the same run, worth keeping. The inspector reported
+  `body.shouty` as `-apple-system` while the page rendered in Comic Sans, which
+  is **correct**: the fixture's selector is `body.shouty *`, matching
+  descendants and not `body` itself. The tool read the computed style rather
+  than describing what the page looks like. And the whole run happened on a
+  `file://` URL, so the `file` branch in `src/shared/pages.js` executed for the
+  first time and permitted the tools to run. The exact wording it displays has
+  still not been looked at.
 
 ---
 
