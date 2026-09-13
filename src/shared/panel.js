@@ -10,13 +10,18 @@
 // Why the panel does not position itself
 // ---------------------------------------------------------------------------
 // The inspector's first design placed its panel automatically, beside whatever
-// was being inspected. That is right for the ruler, where the readout belongs
-// to the measurement being dragged, and wrong for a tool the user points
-// around a page with: the panel became a moving target, and reaching its Copy
-// button meant chasing it.
+// was being inspected. That made the panel a moving target: reaching its Copy
+// button meant chasing it around the screen.
 //
 // So this panel stays where it is put and the user puts it there. The cost is
 // one drag; the benefit is that every control on it can be reached.
+//
+// This comment used to carve out an exception for the ruler, on the grounds
+// that its readout belonged to the rectangle being dragged. That held only
+// while the readout had no controls on it. The ruler now uses this panel and
+// keeps a separate badge, carrying numbers and nothing else, glued to the
+// rectangle. The rule is not "panels beside tools that measure" but "anything
+// you have to click at stays still, anything you only read can follow".
 //
 // It lives in shared/ rather than in the inspector because page analysis and
 // the image inventory both want the same thing. Two near-identical panels
@@ -124,6 +129,83 @@
     .cgp-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
     .cgp-pane { display: none; padding: 12px; min-width: 0; }
     .cgp-pane.is-on { display: block; }
+
+    /* -----------------------------------------------------------------------
+       Shared controls
+       -----------------------------------------------------------------------
+       The colour picker drew a headline figure, a stack of click-to-copy rows
+       and a caption, and the ruler needed the same three things. Drawing them
+       twice is how two panels start behaving differently for reasons nobody
+       can reconstruct afterwards. See LESSONS-LEARNED.md item 9.
+
+       These carry the cgp- prefix instead of the bare .val, .btn and .note the
+       tools already define privately. Tool CSS and this CSS land in the same
+       shadow root, so a shared rule named .btn would sit alongside the
+       inspector's own .btn and one would win by source order, which is not a
+       decision anybody made. A prefix nothing else uses cannot collide, and
+       migrating each tool onto these becomes a visible change to one tool at a
+       time rather than a silent restyle of three working tools at once.
+
+       Outstanding: the colour picker still has its own copies of .val, .btn
+       and .tip. They are byte-identical to these. They come out once the ruler
+       has proven these in Chrome, not before, because deleting the working
+       copy and adding the untested one in the same commit means a failure has
+       two candidate causes. */
+
+    .cgp-figure {
+      height: 74px;
+      border-radius: 6px;
+      border: 1px solid var(--cgp-line);
+      background: var(--cgp-soft);
+      display: grid;
+      place-items: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .cgp-figure.is-empty {
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0;
+      color: var(--cgp-muted);
+    }
+
+    .cgp-vals { display: grid; gap: 5px; margin-top: 10px; }
+    .cgp-val {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      /* min-width: 0 on the row and on the span below. Without both, a long
+         value refuses to shrink, pushes the row past the panel's width, and
+         the body grows a horizontal scrollbar that makes the overflow look
+         deliberate. That shipped once in the page report. */
+      min-width: 0;
+      padding: 7px 10px;
+      border: 1px solid var(--cgp-line);
+      border-radius: 5px;
+      background: var(--cgp-bg);
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .cgp-val:hover { border-color: var(--cgp-accent); }
+    .cgp-val b { font-size: 10px; font-weight: 600; color: var(--cgp-muted); flex: none; }
+    .cgp-val span {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cgp-tip { margin: 6px 2px 0; font-size: 10px; color: var(--cgp-muted); }
+    .cgp-note { margin: 8px 0 0; font-size: 11px; color: var(--cgp-muted); }
+    .cgp-note.warn { color: var(--cgp-accent); }
   `;
 
   // Inline SVG rather than an image file: an <img> would be another package

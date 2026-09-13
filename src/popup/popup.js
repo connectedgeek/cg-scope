@@ -21,7 +21,7 @@ const TOOLS = [
     id: 'ruler',
     label: 'Ruler',
     hint: 'Drag to measure',
-    files: ['src/shared/overlay.js', 'src/tools/ruler.js'],
+    files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/ruler.js'],
   },
   {
     id: 'inspector',
