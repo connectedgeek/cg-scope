@@ -461,6 +461,10 @@ whatever is left.
 
 Each item names **what proves it**, because an item without that is a wish.
 
+**Done:** 0 through 8. The repository skeleton, the build guards and their
+selftest, the manifest and popup, the overlay host, the ruler, the inspector
+with page-wide colours and fonts, the colour picker, and the page report.
+
 0. **Repository skeleton and `.gitignore`.** Proved by: the files existing on
    disk with matching hashes. *(done)*
 1. **`build.ps1 check` with the zero-network guard (invariant 11).** Proved by:
@@ -479,13 +483,33 @@ Each item names **what proves it**, because an item without that is a wish.
 6. **Color picker.** Both the DOM-derived path and the screen-sampling path.
 7. **Page analysis.**
 8. **Image inventory.**
-9. **Responsive preview.**
-10. **The cold-path pass.** The checklist in
-    `docs/CHROME-EXTENSION-TRAPS.md` section 9, minus the items that do not
-    apply while unpacked. Specifically includes: a restricted page, a page that
-    rewrites its DOM after load, a page whose CSS fights the overlay, and a
-    cross-origin image set where resource timing reports nothing.
+9. **Responsive preview. Dropped, not deferred.** The clean implementation
+   loads the page in a sized iframe and a large share of sites refuse to be
+   framed. The fallback is resizing the browser window, which is disruptive
+   and strictly worse than Chrome's own device mode at Ctrl+Shift+M. Building
+   it would spend a version on a weaker copy of a feature one keystroke away.
+   Reopen this only with an argument about what the built-in cannot do.
+10. **The cold-path pass.** `test/hostile.html` produces the remaining
+    Unverified conditions deliberately, one at a time. Also still owed from
+    `docs/CHROME-EXTENSION-TRAPS.md` section 9: a clean profile with no stored
+    colours, and a page that rewrites its DOM after load.
 11. **Decide whether to move to an unlisted listing.** Not before item 10.
+
+### The known fix for traps 1 and 2, held until they are confirmed
+
+Both the maximum-z-index case and the transform-on-`html` case have the same
+remedy: put the overlay host in the **top layer** with the Popover API
+(`host.popover = 'manual'; host.showPopover()`). Top-layer elements paint above
+all normal content regardless of z-index, and are not positioned relative to a
+transformed ancestor. It would need the default popover styling reset and a
+fallback for when `showPopover` is unavailable.
+
+**It is deliberately not implemented yet.** The current approach demonstrably
+works on every real page it has met, and swapping the positioning model of
+every tool to fix two failures that have never been observed risks breaking
+what works to repair what might not be broken. The fix is written down so that
+confirming the problem and fixing it are one short step rather than a research
+task. Confirm first.
 
 ---
 

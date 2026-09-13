@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CG Scope hostile page</title>
+<!--
+  A page built to break CG Scope.
+
+  Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+  Co-Authored-By: Connected Geek, LLC <support@connectedgeek.net>
+
+  Three of the four remaining entries on the Unverified list in CLAUDE.md are
+  conditions that real pages produce rarely and by accident. Waiting to bump
+  into one is how a path stays untested for a year. This page produces each of
+  them on demand, one at a time, so that a failure identifies its own cause.
+
+  Not shipped. It lives in test/ and the package step must exclude that
+  directory when the package step exists.
+
+  How to use it:
+
+    1. chrome://extensions, find CG Scope, Details, and turn on
+       "Allow access to file URLs". That also exercises the file: branch in
+       src/shared/pages.js, which has never run.
+    2. Open this file with Ctrl-O.
+    3. Turn on ONE trap, open the tool named next to it, and write down what
+       happened. Turn it off before trying the next one.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f6f7f9;
+    color: #1f2328;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: #6a737d; margin: 0 0 20px; max-width: 62ch; }
+  .trap {
+    background: #fff;
+    border: 1px solid #e0e4e8;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    max-width: 72ch;
+  }
+  .trap h2 { font-size: 15px; margin: 0 0 2px; }
+  .trap p { margin: 0 0 10px; color: #6a737d; font-size: 13px; }
+  .trap .expect { color: #1f2328; }
+  button {
+    font: inherit;
+    padding: 7px 12px;
+    border: 1px solid #e67a0f;
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button[aria-pressed="true"] { background: #e67a0f; color: #fff; }
+  .state { margin-left: 10px; font-size: 13px; color: #6a737d; }
+
+  /* Trap 1. The maximum stacking order. CG Scope deliberately sits at
+     2147483000, one thousand below this, so that a genuinely higher element
+     stays visible rather than being silently hidden. This is what that
+     decision costs. */
+  #ceiling {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    background: rgba(20, 20, 30, 0.35);
+    pointer-events: none;
+  }
+  #ceiling.on { display: block; }
+  #ceiling span {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    background: #14141e;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+  }
+
+  /* Trap 2. A transform on the root element. A transformed ancestor becomes
+     the containing block for fixed-position descendants, so an overlay
+     attached to documentElement is positioned against this element instead of
+     the viewport. */
+  html.warped { transform: translateY(0) scale(0.98); transform-origin: top center; }
+
+  /* Trap 3. Aggressive global CSS. If the shadow root is doing its job none of
+     this reaches inside the tool. */
+  body.shouty * {
+    font-family: "Comic Sans MS", cursive !important;
+    letter-spacing: 0.06em !important;
+    border-radius: 0 !important;
+  }
+  body.shouty div { outline: 1px dashed rgba(200, 0, 0, 0.35) !important; }
+
+  #filler { margin-top: 20px; }
+  #filler i { display: inline-block; width: 3px; height: 3px; background: #cfd6dd; margin: 1px; }
+</style>
+</head>
+<body>
+
+<div id="ceiling"><span>z-index 2147483647 is covering the page</span></div>
+
+<h1>CG Scope hostile page</h1>
+<p class="lead">
+  One trap at a time. Turn it on, run the tool named in the panel, note what
+  happened, turn it off. Each of these clears a line on the Unverified list in
+  CLAUDE.md, or proves it needs a fix.
+</p>
+
+<div class="trap">
+  <h2>1. An element at the maximum z-index</h2>
+  <p>
+    Run: <strong>Ruler</strong> or <strong>Inspector</strong>.
+    <span class="expect">Expected: the tool is behind the grey sheet and
+    unusable. That is the documented cost of sitting below the maximum, not a
+    bug. What matters is whether it fails visibly or looks broken.</span>
+  </p>
+  <button id="b1" type="button" aria-pressed="false">Toggle ceiling</button>
+  <span class="state" id="s1">off</span>
+</div>
+
+<div class="trap">
+  <h2>2. A transform on the html element</h2>
+  <p>
+    Run: <strong>Ruler</strong>.
+    <span class="expect">Expected failure: the overlay is positioned against
+    the transformed root rather than the viewport, so measurements are offset
+    or the overlay sits in the wrong place. If it looks correct, the assumption
+    behind attaching to documentElement holds.</span>
+  </p>
+  <button id="b2" type="button" aria-pressed="false">Toggle transform</button>
+  <span class="state" id="s2">off</span>
+</div>
+
+<div class="trap">
+  <h2>3. Global CSS that overrides everything</h2>
+  <p>
+    Run: <strong>Inspector</strong>.
+    <span class="expect">Expected: the panel is completely unaffected. Every
+    rule here is <code>!important</code> and applies to <code>*</code>. If the
+    tool's own text turns into Comic Sans, the shadow root is not doing its
+    job.</span>
+  </p>
+  <button id="b3" type="button" aria-pressed="false">Toggle shouty CSS</button>
+  <span class="state" id="s3">off</span>
+</div>
+
+<div class="trap">
+  <h2>4. More than 6000 elements</h2>
+  <p>
+    Run: <strong>Inspector &rarr; Colors</strong>, then <strong>Page
+    report</strong>.
+    <span class="expect">Expected: the Colors tab says "Scanned the first 6000
+    of N elements. This list is incomplete." in orange. A notice nobody has
+    ever seen is a message that has never been read.</span>
+  </p>
+  <button id="b4" type="button" aria-pressed="false">Add 8000 elements</button>
+  <span class="state" id="s4">728 elements</span>
+</div>
+
+<div id="filler"></div>
+
+<script>
+  // No inline handlers anywhere, to match the extension's own convention.
+  const $ = (id) => document.getElementById(id);
+
+  function toggle(btn, state, on, off, apply) {
+    let active = false;
+    btn.addEventListener('click', () => {
+      active = !active;
+      btn.setAttribute('aria-pressed', String(active));
+      state.textContent = active ? on : off;
+      apply(active);
+    });
+  }
+
+  toggle($('b1'), $('s1'), 'covering the page', 'off', (on) => {
+    $('ceiling').classList.toggle('on', on);
+  });
+
+  toggle($('b2'), $('s2'), 'root is transformed', 'off', (on) => {
+    document.documentElement.classList.toggle('warped', on);
+  });
+
+  toggle($('b3'), $('s3'), 'everything is shouting', 'off', (on) => {
+    document.body.classList.toggle('shouty', on);
+  });
+
+  const filler = $('filler');
+  let added = false;
+  $('b4').addEventListener('click', () => {
+    if (added) return;
+    added = true;
+    $('b4').setAttribute('aria-pressed', 'true');
+    // Built in a fragment rather than appended one at a time, so the page does
+    // not spend eight thousand layouts getting there.
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 8000; i++) {
+      const el = document.createElement('i');
+      // A spread of colours, so the Colors tab has something to truncate.
+      el.style.background = 'hsl(' + ((i * 7) % 360) + ', 60%, 60%)';
+      frag.appendChild(el);
+    }
+    filler.appendChild(frag);
+    $('s4').textContent = document.querySelectorAll('*').length + ' elements';
+    $('b4').textContent = 'Added';
+  });
+
+  $('s4').textContent = document.querySelectorAll('*').length + ' elements';
+</script>
+
+</body>
+</html>
