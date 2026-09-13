@@ -154,6 +154,20 @@ Outstanding lands, so the number tracks the plan: `0.2.0` after the ruler,
 these numbers, so they exist to answer "which build is this" rather than to
 communicate compatibility.
 
+**Bump when you start a change, not when you finish it.** `build.ps1 check`
+fails when anything under `manifest.json`, `src/` or `icons/` differs from
+HEAD and the version still matches the committed one. Once the version has
+moved, every subsequent run passes until the change is committed.
+
+Bumping at the end sounds tidier and is worse: the check would fail at exactly
+the moment you are trying to ship, which is the moment a person is most likely
+to wave it through. It also already failed once, on 2026-09-13, when the ruler
+shipped at `0.1.0` because the rule lived only in this paragraph.
+
+Documents and build tooling are deliberately outside the guard. Correcting a
+typo in this file is not a new version of the extension, and a rule that fires
+on every prose edit becomes noise and then gets disabled.
+
 **First unlisted submission is `1.0.0`**, and from that point the Web Store
 enforces monotonic increase for you, which is the only guard in the release
 procedure you get for free.
@@ -292,6 +306,35 @@ unaffected, hash comparison remains the rule.
 corrected: it is a diagnostic that says whether a PNG carries anything beyond
 what it needs to render, and it is idempotent, so running it is safe and
 reporting "already clean" is a useful answer rather than a no-op.
+
+### 2026-09-13: a tool shipped without a version bump, and only a person noticed
+
+**What it did.** The overlay host and the ruler were written, verified and
+delivered with `manifest.json` still at `0.1.0`. The Versioning section of this
+file says the minor bumps as each tool lands, and names `0.2.0` after the
+ruler specifically. Larry noticed by reading the version in the popup and
+asked whether anything was supposed to increment it.
+
+**Why it survived.** The rule was written down and nothing enforced it. The
+only enforcement specified anywhere was a refusal in `build.ps1 package`, and
+`package` does not exist yet, so in practice the rule was a paragraph. This is
+`LESSONS-LEARNED.md` item 5 exactly: a gate that lives in prose is a note to a
+person who is busy, and the person it was relying on this time was me.
+
+Note also what did **not** catch it. `check` passed, because every guard it had
+was about whether the code was allowed to do what it does, and none of them
+were about whether the release metadata had moved. A green build meant less
+than it appeared to.
+
+**What now prevents it.** A bump guard in `check`: if anything under
+`manifest.json`, `src/` or `icons/` differs from HEAD and the version still
+matches the committed one, the build fails and names the changed files. The
+decision is a pure function so the selftest exercises it directly, including
+the exact case that happened here.
+
+The discipline it enforces is "bump when you start, not when you finish",
+because a check that only fires at ship time fires when a person is least
+inclined to obey it.
 
 ### 2026-09-13: a restricted page reported "Unknown" instead of saying why
 

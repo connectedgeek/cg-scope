@@ -13,11 +13,23 @@
 
 import { classifyTab } from '../shared/pages.js';
 
-// The version is read, never written. manifest.json holds the only version
-// literal in the repository; see "Versioning" in CLAUDE.md.
+// Every tool is [shared runtime, tool], injected in that order as classic
+// scripts sharing the isolated world's globals. See src/shared/overlay.js for
+// why classic scripts rather than ES modules.
+const TOOLS = [
+  {
+    id: 'ruler',
+    label: 'Ruler',
+    hint: 'Drag to measure',
+    files: ['src/shared/overlay.js', 'src/tools/ruler.js'],
+  },
+];
+
 function showVersion() {
-  const el = document.getElementById('version');
-  el.textContent = 'v' + chrome.runtime.getManifest().version;
+  // The version is read, never written. manifest.json holds the only version
+  // literal in the repository; see "Versioning" in CLAUDE.md.
+  document.getElementById('version').textContent =
+    'v' + chrome.runtime.getManifest().version;
 }
 
 async function getActiveTab() {
@@ -28,7 +40,7 @@ async function getActiveTab() {
   return tabs && tabs.length ? tabs[0] : null;
 }
 
-function render(state) {
+function renderPage(state) {
   const value = document.getElementById('page-value');
   const note = document.getElementById('page-note');
 
@@ -60,6 +72,67 @@ function render(state) {
   note.hidden = false;
 }
 
+function setError(message) {
+  const el = document.getElementById('tool-error');
+  if (!message) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  el.textContent = message;
+  el.hidden = false;
+}
+
+async function runTool(tool, tabId) {
+  setError('');
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: tool.files,
+    });
+    // Close the popup so it is not covering the page the user is about to
+    // measure. The injected tool owns the interaction from here.
+    window.close();
+  } catch (err) {
+    // The common causes are a restricted page and a page that finished loading
+    // differently than expected. Show what Chrome said rather than a generic
+    // failure, because the message is usually the actual diagnosis.
+    setError('Could not start ' + tool.label + ': ' + err.message);
+  }
+}
+
+function renderTools(state, tabId) {
+  const list = document.getElementById('tool-list');
+  const empty = document.getElementById('tool-empty');
+  const usable = state.kind === 'ok' || state.kind === 'file';
+
+  list.textContent = '';
+
+  for (const tool of TOOLS) {
+    const button = document.createElement('button');
+    button.className = 'tool';
+    button.type = 'button';
+    button.disabled = !usable || tabId === null;
+
+    const name = document.createElement('span');
+    name.className = 'tool-name';
+    name.textContent = tool.label;
+
+    const hint = document.createElement('span');
+    hint.className = 'tool-hint';
+    hint.textContent = tool.hint;
+
+    button.appendChild(name);
+    button.appendChild(hint);
+    // No inline handlers anywhere: the Manifest V3 content security policy
+    // forbids them, and the default cannot be loosened.
+    button.addEventListener('click', () => runTool(tool, tabId));
+    list.appendChild(button);
+  }
+
+  empty.hidden = usable;
+}
+
 async function main() {
   showVersion();
 
@@ -67,11 +140,14 @@ async function main() {
   try {
     tab = await getActiveTab();
   } catch (err) {
-    render({ kind: 'unknown', reason: 'Could not read the active tab: ' + err.message });
+    renderPage({ kind: 'unknown', reason: 'Could not read the active tab: ' + err.message });
+    renderTools({ kind: 'unknown' }, null);
     return;
   }
 
-  render(classifyTab(tab));
+  const state = classifyTab(tab);
+  renderPage(state);
+  renderTools(state, tab ? tab.id : null);
 }
 
 main();

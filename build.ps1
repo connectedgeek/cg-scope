@@ -249,6 +249,86 @@ function Invoke-Version {
 }
 
 # ---------------------------------------------------------------------------
+# Version bump
+# ---------------------------------------------------------------------------
+# The rule in CLAUDE.md is that the version moves when shipping files change.
+# It was written down, it was not enforced by anything, and on 2026-09-13 a
+# whole tool landed at the previous version and was caught by a person reading
+# the popup. That is lesson 5: a rule enforced by nobody is a note to somebody
+# who is busy.
+#
+# The discipline this enforces is "bump when you start a change, not when you
+# finish it". Once the version has moved, every subsequent run passes until the
+# change is committed. Bumping at the end means the check fails at exactly the
+# moment you are trying to ship, which is when a person is most likely to wave
+# it through.
+#
+# The decision is a pure function so the selftest can exercise it without
+# constructing git repositories. The git plumbing is separate and is allowed to
+# report "cannot tell", which is a distinct answer from "fine".
+
+function Get-VersionBumpVerdict {
+    param(
+        [string]$HeadVersion,
+        [string]$CurrentVersion,
+        [int]$ChangedCount
+    )
+
+    if ([string]::IsNullOrWhiteSpace($HeadVersion)) {
+        return [pscustomobject]@{ Ok = $true; Known = $false
+            Reason = 'no committed manifest.json to compare against' }
+    }
+    if ($ChangedCount -le 0) {
+        return [pscustomobject]@{ Ok = $true; Known = $true
+            Reason = 'no shipping files changed since HEAD' }
+    }
+    if ($CurrentVersion -ne $HeadVersion) {
+        return [pscustomobject]@{ Ok = $true; Known = $true
+            Reason = ("version moved {0} -> {1}" -f $HeadVersion, $CurrentVersion) }
+    }
+    return [pscustomobject]@{ Ok = $false; Known = $true
+        Reason = ("{0} shipping file(s) changed since HEAD but the version is still {1}. Bump manifest.json before continuing; see Versioning in CLAUDE.md." -f $ChangedCount, $CurrentVersion) }
+}
+
+# Paths whose contents reach a user. Documents and build tooling are excluded
+# deliberately: correcting a typo in CLAUDE.md is not a new version of the
+# extension, and treating it as one would make the rule noise.
+$ShippingPaths = @('manifest.json', 'src', 'icons')
+
+function Get-GitBumpState {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        return [pscustomobject]@{ Available = $false; HeadVersion = $null; ChangedCount = 0
+            Note = 'git is not on PATH' }
+    }
+
+    Push-Location $RepoRoot
+    try {
+        git rev-parse --verify HEAD 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject]@{ Available = $false; HeadVersion = $null; ChangedCount = 0
+                Note = 'no commits yet' }
+        }
+
+        $headManifest = git show HEAD:manifest.json 2>$null
+        $headVersion = $null
+        if ($LASTEXITCODE -eq 0 -and $headManifest) {
+            try { $headVersion = ($headManifest | ConvertFrom-Json).version } catch { $headVersion = $null }
+        }
+
+        $modified = @(git diff --name-only HEAD -- $ShippingPaths 2>$null)
+        $untracked = @(git ls-files --others --exclude-standard -- $ShippingPaths 2>$null)
+        $changed = @($modified + $untracked | Where-Object { $_ } | Select-Object -Unique)
+
+        return [pscustomobject]@{
+            Available = $true; HeadVersion = $headVersion
+            ChangedCount = $changed.Count; Changed = $changed; Note = $null
+        }
+    }
+    finally { Pop-Location }
+}
+
+# ---------------------------------------------------------------------------
 # Permission justification
 # ---------------------------------------------------------------------------
 # Invariant 8: every permission in manifest.json has an entry in the
@@ -378,6 +458,28 @@ function Invoke-Check {
         Write-Host ("version guard: {0}" -f $v.Version)
     } else {
         Write-Host ("version guard: not applicable ({0})" -f $v.Reason) -ForegroundColor DarkGray
+    }
+
+    # Bump guard. Only meaningful once there is a commit to compare against.
+    if ($v.Valid) {
+        $git = Get-GitBumpState
+        if (-not $git.Available) {
+            Write-Host ("bump guard: cannot tell ({0})" -f $git.Note) -ForegroundColor DarkGray
+        }
+        else {
+            $verdict = Get-VersionBumpVerdict -HeadVersion $git.HeadVersion `
+                                              -CurrentVersion $v.Version `
+                                              -ChangedCount $git.ChangedCount
+            if (-not $verdict.Ok) {
+                Write-Host ''
+                Write-Host 'FAIL: the version was not bumped.' -ForegroundColor Red
+                Write-Host ("  {0}" -f $verdict.Reason) -ForegroundColor DarkGray
+                foreach ($f in $git.Changed) { Write-Host ("    {0}" -f $f) -ForegroundColor DarkGray }
+                Write-Host ''
+                return 1
+            }
+            Write-Host ("bump guard: {0}" -f $verdict.Reason)
+        }
     }
 
     # Permission guard. Same shape as the version guard: absent manifest is
@@ -666,6 +768,30 @@ Deliberately absent:
         } else {
             Write-Host '  FAIL  optional_permissions were not checked' -ForegroundColor Red
             $failures++
+        }
+
+        # --- Case 9: the bump verdict ---------------------------------------
+        # Pure function, so no git repository is needed to exercise it. The
+        # case that matters is the last one: it is the failure that actually
+        # happened, on 2026-09-13, when a tool shipped at the old version.
+        $bumpCases = @(
+            @{ Name = 'changed and bumped';    Head = '0.1.0'; Cur = '0.2.0'; N = 5; ExpectOk = $true  }
+            @{ Name = 'changed, not bumped';   Head = '0.1.0'; Cur = '0.1.0'; N = 5; ExpectOk = $false }
+            @{ Name = 'nothing changed';       Head = '0.1.0'; Cur = '0.1.0'; N = 0; ExpectOk = $true  }
+            @{ Name = 'no head to compare';    Head = '';      Cur = '0.1.0'; N = 5; ExpectOk = $true  }
+            @{ Name = 'one file, not bumped';  Head = '0.2.0'; Cur = '0.2.0'; N = 1; ExpectOk = $false }
+        )
+
+        foreach ($bc in $bumpCases) {
+            $cases++
+            $res = Get-VersionBumpVerdict -HeadVersion $bc.Head -CurrentVersion $bc.Cur -ChangedCount $bc.N
+            if ($res.Ok -eq $bc.ExpectOk) {
+                Write-Host ("  pass  bump '{0}' -> ok={1}" -f $bc.Name, $res.Ok) -ForegroundColor Green
+            } else {
+                Write-Host ("  FAIL  bump '{0}': expected ok={1}, got ok={2} ({3})" -f `
+                            $bc.Name, $bc.ExpectOk, $res.Ok, $res.Reason) -ForegroundColor Red
+                $failures++
+            }
         }
     }
     finally {
