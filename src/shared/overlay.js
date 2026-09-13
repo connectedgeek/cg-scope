@@ -228,7 +228,15 @@
       placeBeside,
     };
 
+    // A tool can suspend Escape while a browser-level picker is on screen.
+    // Chrome's EyeDropper is cancelled with Escape, and without this the same
+    // keypress would cancel the pick AND close the whole tool, which is two
+    // outcomes from one key and the wrong one is not recoverable.
+    let escapeEnabled = true;
+    api.setEscapeEnabled = (on) => { escapeEnabled = !!on; };
+
     const onKey = (ev) => {
+      if (!escapeEnabled) return;
       if (ev.key !== 'Escape') return;
       // Capture phase and stopPropagation: pages bind their own Escape
       // handlers, and the user pressing Escape means "close this tool", not

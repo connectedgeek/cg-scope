@@ -29,6 +29,12 @@ const TOOLS = [
     hint: 'Elements, colors, fonts',
     files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/inspector.js'],
   },
+  {
+    id: 'colorpicker',
+    label: 'Color picker',
+    hint: 'Sample any pixel',
+    files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/colorpicker.js'],
+  },
 ];
 
 function showVersion() {
