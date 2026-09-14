@@ -14,8 +14,27 @@ write, the extension has grown a second purpose and the Chrome Web Store Limited
 Use policy is about to make that a problem rather than a design preference.
 
 **Single purpose:** Inspect the visual construction of the page you are
-currently viewing: measurements, spacing, typography, colors, images and page
-weight, without leaving the page and without sending anything off the machine.
+currently viewing (measurements, spacing, typography, colors, images and page
+weight) and take what you find with you by copying or saving it, without
+leaving the page and without sending anything off the machine.
+
+**Why this wording, and where it is weak.** It was rewritten on 2026-09-14 when
+publishing to the Chrome Web Store became the plan, because the previous
+sentence described inspection only and 0.10.0 saves files. The Chrome Web Store
+dashboard has a field where this sentence is typed, so it stopped being an
+internal discipline and became a submission artifact.
+
+The weak part is "take what you find with you". It holds that copying and
+saving are how the result of an inspection leaves the tool, rather than a
+second purpose bolted to the first. That is defensible and it is a stretch, and
+it is the seam a reviewer will pull at, because the quality guidelines name
+"extensions offering wide-ranging features or multiple service entry points" as
+an example of what not to be, and this extension has five entry points.
+
+If review pushes on it, the fallback is decided in advance rather than
+improvised: Download comes out of the published build and stays in the
+unpacked one. Four tools that measure, read and report are one purpose by any
+reading. Do not answer a reviewer by broadening the sentence further.
 
 ---
 

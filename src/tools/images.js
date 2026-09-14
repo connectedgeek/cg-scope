@@ -516,8 +516,13 @@
       }
 
       // --- copying ----------------------------------------------------------
-      async function write(text, button, done) {
-        const was = button.textContent;
+      // `label` is the button's resting text, passed in rather than read off
+      // the button at click time. Reading it captured "Copied" on a second
+      // click inside the timeout, and the later timer then wrote that back as
+      // the resting label, permanently. ruler.js documents this exact trap and
+      // avoids it; this file had the bug the comment warns about.
+      // See docs/AUDIT-2026-09-14.md H5.
+      async function write(text, button, label, done) {
         try {
           await navigator.clipboard.writeText(text);
           button.textContent = done;
@@ -525,7 +530,7 @@
           button.textContent = 'Copy failed';
           console.error('[CG Scope] clipboard write failed:', err);
         }
-        setTimeout(() => { button.textContent = was; refreshCounts(); }, 1300);
+        setTimeout(() => { button.textContent = label; refreshCounts(); }, 1300);
       }
 
       // Tabs rather than commas: the destination is a spreadsheet, and a URL
@@ -561,55 +566,95 @@
         ev.stopPropagation();
         const items = target();
         if (!items.length) return;
-        write(items.map((i) => i.url).join('\r\n'), copyUrls, 'Copied');
+        write(items.map((i) => i.url).join('\r\n'), copyUrls, 'Copy URLs', 'Copied');
       });
 
       copyTable.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const items = target();
         if (!items.length) return;
-        write(asTable(items), copyTable, 'Copied');
+        write(asTable(items), copyTable, 'Copy table', 'Copied');
       });
 
       saveBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        const items = target();
-        if (!items.length) return;
+
+        // Only images the browser has actually decoded are offered for saving.
+        // naturalWidth is non-zero only after a successful decode, which is the
+        // cheapest proof available here that the resource IS an image. Until
+        // 0.11.0 this sent every <img> with a src, so a page could put an
+        // arbitrary file behind a button labelled Download and a grid of
+        // thumbnails. They stay in the list and stay copyable; they are simply
+        // not saved. See docs/AUDIT-2026-09-14.md B6.
+        const chosen = target();
+        const items = chosen.filter((i) => i.w > 0);
+        const notLoaded = chosen.length - items.length;
+
+        if (!items.length) {
+          setNote(
+            notLoaded
+              ? 'Nothing to save: ' + notLoaded + (notLoaded === 1 ? ' image has' : ' images have') +
+                ' not loaded, so the browser has not confirmed they are images.'
+              : 'Nothing to save.',
+            true
+          );
+          return;
+        }
 
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving';
         setNote('');
 
-        chrome.runtime.sendMessage(
-          { type: 'cg-scope:download', urls: items.map((i) => i.url) },
-          (res) => {
-            saveBtn.textContent = 'Download';
-            refreshCounts();
+        // sendMessage throws synchronously, not through the callback, when the
+        // extension has been reloaded since this page loaded. Without this the
+        // button stayed disabled and reading "Saving" for the life of the tab,
+        // with the only trace in a console nobody is looking at.
+        try {
+          chrome.runtime.sendMessage(
+            { type: 'cg-scope:download', urls: items.map((i) => i.url) },
+            (res) => {
+              saveBtn.textContent = 'Download';
+              refreshCounts();
 
-            // Checked before res, and never ignored. This is set when the
-            // worker did not answer at all, and without reading it the failure
-            // is a button that flickers and does nothing.
-            const err = chrome.runtime.lastError;
-            if (err) {
-              setNote('The extension background did not answer: ' + err.message, true);
-              return;
-            }
-            if (!res) {
-              setNote('The extension background answered with nothing.', true);
-              return;
-            }
-            if (!res.ok) {
-              setNote('Refused: ' + (res.reason || 'no reason given') + '.', true);
-              return;
-            }
+              // Checked before res, and never ignored. This is set when the
+              // worker did not answer at all, and without reading it the failure
+              // is a button that flickers and does nothing.
+              const err = chrome.runtime.lastError;
+              if (err) {
+                setNote('The extension background did not answer: ' + err.message, true);
+                return;
+              }
+              if (!res) {
+                setNote('The extension background answered with nothing.', true);
+                return;
+              }
+              if (!res.ok) {
+                setNote('Refused: ' + (res.reason || 'no reason given') + '.', true);
+                return;
+              }
 
-            const parts = [res.started + (res.started === 1 ? ' image sent' : ' images sent') +
-                           ' to Downloads, in ' + res.folder];
-            if (res.refused) parts.push(res.refused + ' skipped for an unsupported URL scheme');
-            if (res.failed) parts.push(res.failed + ' refused by Chrome, see the console');
-            setNote(parts.join('. ') + '.', !!(res.refused || res.failed));
-          }
-        );
+              const parts = [res.started + (res.started === 1 ? ' image sent' : ' images sent') +
+                             ' to Downloads, in ' + res.folder];
+              if (res.refused) parts.push(res.refused + ' skipped for an unsupported URL scheme');
+              if (res.failed) parts.push(res.failed + ' refused by Chrome, see the console');
+              if (notLoaded) {
+                parts.push(notLoaded + (notLoaded === 1 ? ' image was' : ' images were') +
+                           ' skipped because they have not loaded');
+              }
+              setNote(parts.join('. ') + '.', !!(res.refused || res.failed || notLoaded));
+            }
+          );
+        } catch (err) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Download';
+          refreshCounts();
+          setNote(
+            'Could not reach the extension background: ' + err.message +
+            '. If CG Scope was reloaded or updated since this page loaded, ' +
+            'reload the page.',
+            true
+          );
+        }
       });
 
       allBox.addEventListener('click', (ev) => ev.stopPropagation());
@@ -636,6 +681,12 @@
         ui.destroy();
       };
     },
-    { pointerEvents: 'auto' }
+    // 'none', not 'auto'. This tool has no interaction surface of its own: its
+    // only content is the panel, which sets pointer-events: auto on itself. A
+    // full-viewport host set to 'auto' swallowed every click and every scroll
+    // on the page underneath, with nothing on screen to explain why, which the
+    // inspector and the page report had already got right.
+    // See docs/AUDIT-2026-09-14.md H5.
+    { pointerEvents: 'none' }
   );
 })();

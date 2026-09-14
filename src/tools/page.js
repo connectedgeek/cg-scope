@@ -373,7 +373,12 @@
         top.className = 'top';
         const dims = document.createElement('span');
         dims.className = 'dims';
-        dims.textContent = img.natural.w + ' × ' + img.natural.h;
+        // An image that has not decoded reports 0 x 0, which is not its size.
+        // images.js has always said "size unknown" for this; this file printed
+        // a confident zero. See docs/AUDIT-2026-09-14.md H6.
+        dims.textContent = (img.natural.w && img.natural.h)
+          ? img.natural.w + ' × ' + img.natural.h
+          : 'size unknown';
         const size = document.createElement('span');
         size.className = 'size';
         size.textContent =

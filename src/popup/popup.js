@@ -153,7 +153,17 @@ function renderTools(state, tabId) {
     button.appendChild(hint);
     // No inline handlers anywhere: the Manifest V3 content security policy
     // forbids them, and the default cannot be loosened.
-    button.addEventListener('click', () => runTool(tool, tabId));
+    // Disabled for the life of the call. executeScript takes tens of
+    // milliseconds and the popup stays open for all of them, so an ordinary
+    // double click fired this twice: the first injection opened the tool, the
+    // second toggled it straight back closed, and then the popup shut. The user
+    // saw nothing at all, which is invariant 5's failure mode produced by our
+    // own toggle design. See docs/AUDIT-2026-09-14.md H5.
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      runTool(tool, tabId).finally(() => { button.disabled = false; });
+    });
     list.appendChild(button);
   }
 

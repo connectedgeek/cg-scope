@@ -303,17 +303,21 @@
         note.classList.toggle('warn', !!warn);
       }
 
-      async function copyValue(el, text) {
+      // Takes the key, not the text, so the restore reads the current value
+      // rather than whatever the span said when the click landed. Two quick
+      // clicks on one row used to leave the word "copied" sitting there as the
+      // value. ruler.js documents this trap; this file had it.
+      // See docs/AUDIT-2026-09-14.md H5.
+      async function copyValue(el, key) {
         const span = el.querySelector('span');
-        const was = span.textContent;
         try {
-          await navigator.clipboard.writeText(text);
+          await navigator.clipboard.writeText(values[key]);
           span.textContent = 'copied';
         } catch (err) {
           span.textContent = 'copy failed';
           console.error('[CG Scope] clipboard write failed:', err);
         }
-        setTimeout(() => { span.textContent = was; }, 1100);
+        setTimeout(() => { span.textContent = values[key]; }, 1100);
       }
 
       function show(hex) {
@@ -496,15 +500,15 @@
 
       vHex.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        if (currentHex) copyValue(vHex, currentHex);
+        if (currentHex) copyValue(vHex, 'hex');
       });
       vRgb.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        if (currentHex) copyValue(vRgb, vRgb.querySelector('span').textContent);
+        if (currentHex) copyValue(vRgb, 'rgb');
       });
       vHsl.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        if (currentHex) copyValue(vHsl, vHsl.querySelector('span').textContent);
+        if (currentHex) copyValue(vHsl, 'hsl');
       });
 
       auto.addEventListener('click', (ev) => ev.stopPropagation());

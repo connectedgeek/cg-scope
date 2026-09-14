@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CG Scope",
-  "version": "0.10.0",
-  "description": "Inspect the page you are viewing: measurements, spacing, typography, colors, images and page weight.",
+  "version": "0.11.0",
+  "description": "Inspect a page's measurements, spacing, type, colors and images, then copy or save what you find. Nothing leaves your machine.",
   "permissions": [
     "activeTab",
     "downloads",
