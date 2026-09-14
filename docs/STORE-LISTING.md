@@ -187,6 +187,33 @@ support@connectedgeek.net
 
 ---
 
+## Graphic assets
+
+Verified against Google's live listing documentation on 2026-09-14. This section
+did not exist until then, and its absence is why the first pass through this
+document would have reached the dashboard with only screenshots in hand.
+
+| Asset | Size | Required | Status |
+|---|---|---|---|
+| Store icon | 128x128 | yes | `icons/icon128.png`, already in the package |
+| Screenshots | 1280x800 | at least one, up to five | shot list below |
+| Small promo tile | 440x280 | yes | built 2026-09-14 |
+| Marquee promo tile | 1400x560 | optional | built 2026-09-14 |
+| Promotional video | YouTube link | listed as required | none |
+
+The tiles were rendered from `icons/icon128.png` and the landing page palette so
+the store and the site do not look like two different products. They are plain
+on purpose. A promo tile that oversells is the first thing a reviewer compares
+against the single purpose sentence.
+
+On the video: the documentation lists it among the assets you must provide, and
+the dashboard has historically accepted submissions without one. Do not plan
+around the lenient reading. If the form blocks, record the five tools on one
+page in a single silent pass and upload that. It is thirty seconds with the
+extension already loaded.
+
+---
+
 ## Screenshots
 
 Five, 1280x800, taken from Chrome on a real page. **Not** the panels on the

@@ -215,6 +215,38 @@ is answerable months later.
 - [ ] **Privacy policy URL**: `https://scope.connectedgeek.net/#privacy`
 - [ ] **Distribution**: public
 
+**Graphic assets, which are a separate gate from screenshots.** Verified against
+Google's live listing documentation on 2026-09-14. The dashboard asks for all of
+these, and only the marquee is marked optional there:
+
+- [ ] **Store icon**, 128x128. `icons/icon128.png` already exists and ships in
+      the package; upload the same file rather than making a second one
+- [ ] **Small promo tile**, 440x280, PNG or JPEG. Required. Built 2026-09-14 from
+      `icon128.png` and the landing page palette
+- [ ] **Marquee promo tile**, 1400x560. Optional, built at the same time
+- [ ] **Promotional video**: a YouTube link. The documentation lists this among
+      the assets you "must provide" while the dashboard has historically allowed
+      submission without one. Do not plan around the lenient reading. If the
+      form blocks on it, the fallback is a silent screen recording of the five
+      tools on one page, which is thirty seconds of work with the extension
+      already loaded, not a production
+
+**Deferred publishing.** The submit dialog has a checkbox that publishes
+automatically when review finishes. Unchecking it stages the item instead and
+lets you publish at a moment you choose. Take that option. The whole reason
+Part B was rewritten is that there are no hot fixes, so the one piece of timing
+control on offer is worth having: it means launch happens when you are at a
+keyboard rather than whenever a reviewer clears the queue.
+
+Two consequences, both from Google's documentation:
+
+- A staged submission expires after **30 days**. Past that it reverts to a draft
+  and has to be submitted for review again.
+- If you find a defect after submitting but before review completes, **cancel
+  the review** rather than waiting it out. That releases the item immediately so
+  a corrected package can go up, which is faster than letting a doomed review
+  finish.
+
 ### B7. Verify what the store actually serves
 
 Everything before this verified your build against your intent. This is the only
