@@ -737,9 +737,23 @@ function Invoke-Check {
     Write-Host ''
     Write-Host 'check: PASS' -ForegroundColor Green
     Write-Host ''
+    # This block is the only part of check's output whose job is to be
+    # disbelieved, so it is the part that must never go stale. It said "no unit
+    # tests of tool behaviour (no tools yet)" until 2026-09-14, by which point
+    # there were five tools, 83 selftest cases and 21 assertions over the
+    # message contract. A reader taking it at face value was told two false
+    # things by the one paragraph written to stop exactly that.
+    #
+    # If a guard, a test file or a tool is added or removed, this list changes
+    # in the same commit. An out-of-date honesty note is read as current
+    # honesty, which makes it worse than no note at all.
     Write-Host 'Not checked, and this list is the honest scope of what PASS means:' -ForegroundColor DarkGray
     Write-Host '  - no lint (no linter configured)' -ForegroundColor DarkGray
-    Write-Host '  - no unit tests of tool behaviour (no tools yet)' -ForegroundColor DarkGray
+    Write-Host '  - this run executed no test. The guards have tests of their' -ForegroundColor DarkGray
+    Write-Host '    own, build.ps1 selftest and tools/messages.test.mjs, and' -ForegroundColor DarkGray
+    Write-Host '    neither of them ran here.' -ForegroundColor DarkGray
+    Write-Host '  - what the five tools do on a real page is tested by nothing,' -ForegroundColor DarkGray
+    Write-Host '    here or anywhere. Only loading the extension shows that.' -ForegroundColor DarkGray
     Write-Host '  - parsing is not running. A file that parses can still throw' -ForegroundColor DarkGray
     Write-Host '    on its first line.' -ForegroundColor DarkGray
     Write-Host '  - nothing here executes the extension. Only Chrome does that.' -ForegroundColor DarkGray

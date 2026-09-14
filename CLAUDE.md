@@ -364,6 +364,18 @@ The practice stands and is now cheap to state: write, read back, hash-compare,
 and on a mismatch re-write from a new staging path and compare again. Never
 describe a file as written on the strength of the tool saying so.
 
+**Recurrence, 2026-09-14, fourth occurrence.** `CLAUDE.md` and `build.ps1` were
+written in the same transfer. Both reported `written`. `build.ps1` landed
+correctly at 78295 bytes and hash `5e0e1a67`. `CLAUDE.md` read back at 51012
+bytes and hash `a0a868dd`, which is its exact pre-edit content, against an
+expected 53683 bytes and `b81dfbe6`. Re-writing from a different staging path
+succeeded on the first attempt and the hashes matched.
+
+The new information is that the failure is per-file, not per-transfer. Two files
+went in one call and one of them was stale, so verifying any single file in a
+batch says nothing about the others. Every file in a transfer gets its own
+hash comparison. A batch that reports success has reported nothing.
+
 ### 2026-09-13: the verification read mutates images, so image hashes prove nothing
 
 **What it did.** The four icon PNGs were written to the machine and read back
@@ -551,9 +563,58 @@ git config core.hooksPath tools/hooks
 `git commit --no-verify` still gets past it, deliberately: a hook nobody can
 bypass is a hook somebody disables permanently the first time it is wrong.
 
+**Proved red before being trusted**, per invariant 3. `manifest.json` was set to
+`0.11.1` on purpose, which is lower than HEAD's `0.11.2`, and the commit was
+attempted. The hook refused it, the version guard named the reason, and
+`git log --oneline -1` still showed `c9d2613`. HEAD not moving is the assertion
+that matters. A hook that prints a refusal while the commit lands anyway is the
+original defect wearing the remedy's clothes.
+
 **The other half of the remedy is procedural and is mine.** A command whose
 refusal should stop the next command does not go in the same block as that
 command. The gate goes on its own, and the next step waits for what it said.
+
+Note that the hook changes what that rule permits. `check` and `git commit` may
+now be handed over together, because the gate is no longer beside the commit, it
+is inside it. The rule binds any gate that is still only a printed refusal.
+
+### 2026-09-14: the honesty note in check's output had been false for weeks
+
+**What it did.** Every passing `check` printed, under the heading "Not checked,
+and this list is the honest scope of what PASS means":
+
+```
+  - no unit tests of tool behaviour (no tools yet)
+```
+
+By 2026-09-14 there were five tools, 83 selftest cases and 21 assertions over
+the message contract in `tools/messages.test.mjs`. The line was written when the
+repository had none of them and was never revisited. A reader taking `check` at
+face value was told two false things: that no tools existed, and that nothing
+was tested.
+
+**Why it matters more than an ordinary stale comment.** That paragraph is the
+one part of the output whose entire job is to be disbelieved. It exists to stop
+a green PASS being read as more than it is. An out-of-date honesty note is read
+as current honesty, so it does not merely fail to help, it actively misleads,
+and it does so from inside the output most likely to be trusted.
+
+It is the same shape as the landing page describing permissions the extension
+did not have: a claim that was true when written, left alone while the thing it
+described moved, and caught by a person reading it rather than by anything in
+the build.
+
+**What now prevents it.** Nothing automatic, and that is stated rather than
+papered over. A guard that verified this paragraph against reality would have to
+know what the tools do, which is the thing nothing here tests. What exists is a
+comment above the block saying that adding or removing a guard, a test file or a
+tool changes this list in the same commit, plus this entry.
+
+**The general rule.** A claim about the project that lives inside the project
+gets re-read whenever the thing it describes changes. That currently covers four
+places, and they are expected to agree: this file, `manifest.json`, the honesty
+block in `check`, and `docs/STORE-LISTING.md`. The permission guard enforces
+agreement between the first two. The other two are read by people.
 
 ## Unverified paths
 
