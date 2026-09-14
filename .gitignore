@@ -15,6 +15,11 @@
 /scratch/
 /notes/
 *.local.*
+# The Claude desktop app writes files it hands back into this folder. On
+# 2026-09-14 a `git add -A` swept it into a commit, putting a second copy of
+# site/index.html in the repository, which is the exact thing the note at the
+# top of this file was written about after it happened on the previous project.
+/Claude outputs/
 
 # Environment
 .env

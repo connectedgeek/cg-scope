@@ -268,6 +268,23 @@ function Invoke-Version {
 # constructing git repositories. The git plumbing is separate and is allowed to
 # report "cannot tell", which is a distinct answer from "fine".
 
+# Ordered comparison of two Chrome version strings. Returns 1, 0 or -1.
+# Segment by segment as integers, because "0.10.1" is greater than "0.2.0" and
+# a string comparison says the opposite.
+function Compare-ExtensionVersion {
+    param([string] $A, [string] $B)
+    $x = @(($A -split '\.') | ForEach-Object { [int]$_ })
+    $y = @(($B -split '\.') | ForEach-Object { [int]$_ })
+    $n = [Math]::Max($x.Count, $y.Count)
+    for ($i = 0; $i -lt $n; $i++) {
+        $ai = if ($i -lt $x.Count) { $x[$i] } else { 0 }
+        $bi = if ($i -lt $y.Count) { $y[$i] } else { 0 }
+        if ($ai -gt $bi) { return 1 }
+        if ($ai -lt $bi) { return -1 }
+    }
+    return 0
+}
+
 function Get-VersionBumpVerdict {
     param(
         [string]$HeadVersion,
@@ -283,9 +300,19 @@ function Get-VersionBumpVerdict {
         return [pscustomobject]@{ Ok = $true; Known = $true
             Reason = 'no shipping files changed since HEAD' }
     }
-    if ($CurrentVersion -ne $HeadVersion) {
+    # Increased, not merely different. This was `-ne`, so going from 0.10.1
+    # back to 0.2.0 passed and printed "version moved". The Web Store refuses
+    # an upload whose version is not higher than the published one, so the
+    # first anybody would have learned of it is a rejected submission.
+    # See docs/AUDIT-2026-09-14.md H2.
+    $order = Compare-ExtensionVersion -A $CurrentVersion -B $HeadVersion
+    if ($order -gt 0) {
         return [pscustomobject]@{ Ok = $true; Known = $true
             Reason = ("version moved {0} -> {1}" -f $HeadVersion, $CurrentVersion) }
+    }
+    if ($order -lt 0) {
+        return [pscustomobject]@{ Ok = $false; Known = $true
+            Reason = ("the version went backwards, {0} -> {1}. The Web Store refuses an upload that is not higher than the published one." -f $HeadVersion, $CurrentVersion) }
     }
     return [pscustomobject]@{ Ok = $false; Known = $true
         Reason = ("{0} shipping file(s) changed since HEAD but the version is still {1}. Bump manifest.json before continuing; see Versioning in CLAUDE.md." -f $ChangedCount, $CurrentVersion) }
@@ -670,13 +697,22 @@ function Invoke-Check {
     # Syntax guard.
     $node = Get-NodeCommand
     if (-not $node) {
-        # Loud, and not counted as a pass. A guard that quietly does nothing
-        # when its tool is missing is worse than no guard, because the output
-        # still reads as green.
-        Write-Host 'syntax guard: SKIPPED, node was not found on PATH' -ForegroundColor Yellow
-        Write-Host '  Nothing parsed the JavaScript. This is not a pass.' -ForegroundColor DarkGray
+        # Returns 2, the same UNKNOWN this script already uses when there is
+        # nothing to scan. It used to print "this is not a pass" and then fall
+        # through to `check: PASS` and return 0, which meant `package` would
+        # build a release on a machine without node in which no JavaScript had
+        # been parsed and the message gate had never run. The text was right
+        # and the exit code disagreed with it.
+        # See docs/AUDIT-2026-09-14.md B2.
+        Write-Host ''
+        Write-Host 'UNKNOWN: node was not found on PATH.' -ForegroundColor Yellow
+        Write-Host '  Nothing parsed the JavaScript, so this run cannot say whether the' -ForegroundColor DarkGray
+        Write-Host '  extension would load. Install node, or accept that this machine' -ForegroundColor DarkGray
+        Write-Host '  cannot produce a package.' -ForegroundColor DarkGray
+        Write-Host ''
+        return 2
     }
-    elseif (-not (Test-Path -LiteralPath $SrcRoot)) {
+    if (-not (Test-Path -LiteralPath $SrcRoot)) {
         Write-Host 'syntax guard: no src/ to parse' -ForegroundColor DarkGray
     }
     else {
@@ -951,6 +987,12 @@ Deliberately absent:
             @{ Name = 'nothing changed';       Head = '0.1.0'; Cur = '0.1.0'; N = 0; ExpectOk = $true  }
             @{ Name = 'no head to compare';    Head = '';      Cur = '0.1.0'; N = 5; ExpectOk = $true  }
             @{ Name = 'one file, not bumped';  Head = '0.2.0'; Cur = '0.2.0'; N = 1; ExpectOk = $false }
+            # The guard tested -ne, so a version going backwards passed and
+            # printed "version moved". AUDIT H2.
+            @{ Name = 'went backwards';        Head = '0.10.1'; Cur = '0.2.0';  N = 3; ExpectOk = $false }
+            # And the comparison must be numeric per segment. A string compare
+            # puts 0.10.0 below 0.9.0 and would fail a legitimate bump.
+            @{ Name = '0.10.0 is above 0.9.0'; Head = '0.9.0';  Cur = '0.10.0'; N = 3; ExpectOk = $true  }
         )
 
         foreach ($bc in $bumpCases) {
@@ -1134,9 +1176,15 @@ function f() {
         else {
             $prevGate = $ErrorActionPreference
             $ErrorActionPreference = 'Continue'
-            try { $gateOut = & $nodeCmd $gateTest 2>&1 }
+            $gateCode = 0
+            try {
+                $gateOut = & $nodeCmd $gateTest 2>&1
+                $gateCode = $LASTEXITCODE
+            }
             finally { $ErrorActionPreference = $prevGate }
 
+            $gatePass = 0
+            $gateFail = 0
             foreach ($item in @($gateOut)) {
                 $line = if ($item -is [System.Management.Automation.ErrorRecord]) {
                     $item.Exception.Message
@@ -1144,16 +1192,51 @@ function f() {
                 if (-not $line -or -not $line.Trim()) { continue }
                 if ($line -like 'pass *') {
                     $cases++
+                    $gatePass++
                     Write-Host ("  {0}" -f $line) -ForegroundColor Green
                 }
                 elseif ($line -like 'FAIL *') {
                     $cases++
                     $failures++
+                    $gateFail++
                     Write-Host ("  {0}" -f $line) -ForegroundColor Red
                 }
                 else {
                     Write-Host ("        {0}" -f $line) -ForegroundColor DarkGray
                 }
+            }
+
+            # The exit code decides, not the output.
+            $cases++
+            $gateVerdict = Get-GateVerdict -ExitCode $gateCode -PassCount $gatePass -FailCount $gateFail
+            if ($gateVerdict.Ok) {
+                Write-Host ("  pass  the message gate test ran: {0}" -f $gateVerdict.Reason) -ForegroundColor Green
+            } else {
+                $failures++
+                Write-Host ("  FAIL  the message gate test did not run cleanly: {0}" -f $gateVerdict.Reason) -ForegroundColor Red
+            }
+        }
+
+        # --- Case 10f: did the gate test run, or merely print nothing --------
+        # The relay counted output lines and never read node's exit code, so a
+        # crash in the test produced a stack trace, zero matching lines, and a
+        # green run with trust boundary 3 quietly dropped from the proof set.
+        # AUDIT B4.
+        $gateCases = @(
+            @{ Name = 'a clean run';                 Code = 0; P = 21; F = 0; ExpectOk = $true  }
+            @{ Name = 'an assertion failed';         Code = 1; P = 20; F = 1; ExpectOk = $false }
+            @{ Name = 'crashed before asserting';    Code = 1; P = 0;  F = 0; ExpectOk = $false }
+            @{ Name = 'exited clean, asserted none'; Code = 0; P = 0;  F = 0; ExpectOk = $false }
+        )
+        foreach ($gc in $gateCases) {
+            $cases++
+            $gv = Get-GateVerdict -ExitCode $gc.Code -PassCount $gc.P -FailCount $gc.F
+            if ($gv.Ok -eq $gc.ExpectOk) {
+                Write-Host ("  pass  gate verdict, {0} -> ok={1}" -f $gc.Name, $gv.Ok) -ForegroundColor Green
+            } else {
+                Write-Host ("  FAIL  gate verdict, {0}: expected ok={1}, got ok={2} ({3})" -f `
+                            $gc.Name, $gc.ExpectOk, $gv.Ok, $gv.Reason) -ForegroundColor Red
+                $failures++
             }
         }
 
@@ -1169,6 +1252,12 @@ function f() {
             @{ Name = 'one entry';      Body = "## Pending`n`n## 2026-09-13: started storing X`n";    ExpectClear = $false }
             @{ Name = 'template only';  Body = "## Pending`n`n*(empty)*`n`n<!--`nTemplate:`nstuff`n-->`n"; ExpectClear = $true  }
             @{ Name = 'entry then tmpl';Body = "## Pending`n`n## a thing`n`n<!--`nTemplate`n-->`n";    ExpectClear = $false }
+            # The case the gate could not see. The real file's template opens
+            # four lines under ## Pending and runs to the end, and the gate used
+            # to stop at it, so an entry written where the template says to
+            # write one was invisible. AUDIT B3.
+            @{ Name = 'entry after tmpl'; Body = "## Pending`n`n*(empty)*`n`n<!--`nTemplate`n-->`n`n## 2026-09-20: now stores the page url`n"; ExpectClear = $false }
+            @{ Name = 'two templates, still clear'; Body = "## Pending`n`n*(empty)*`n`n<!--`nOne`n-->`n`n<!--`nTwo`n-->`n"; ExpectClear = $true }
         )
         $k = 0
         foreach ($dc in $discCases) {
@@ -1255,6 +1344,33 @@ function Select-ShippingPaths {
 # PENDING-DISCLOSURES.md must be empty before a version is published. That rule
 # existed in bold in two documents on the previous project and was walked past
 # anyway, because nothing enforced it. This is the enforcement.
+# Whether the message gate test actually ran, as opposed to printing nothing.
+# Pure, so the selftest can assert it without crashing node on purpose.
+#
+# The relay used to count lines matching `pass ` and `FAIL ` and never read the
+# exit code. A crash in the test, or in the module it imports, produced a stack
+# trace, zero matching lines, nothing incremented, and a green run with trust
+# boundary 3 silently dropped from the proof set.
+# See docs/AUDIT-2026-09-14.md B4.
+function Get-GateVerdict {
+    param([int] $ExitCode, [int] $PassCount, [int] $FailCount)
+
+    if ($FailCount -gt 0) {
+        return [pscustomobject]@{ Ok = $false
+            Reason = ("{0} gate assertion(s) failed" -f $FailCount) }
+    }
+    if ($ExitCode -ne 0) {
+        return [pscustomobject]@{ Ok = $false
+            Reason = ("the gate test exited {0} without reporting a failure, so it crashed rather than ran" -f $ExitCode) }
+    }
+    if ($PassCount -le 0) {
+        return [pscustomobject]@{ Ok = $false
+            Reason = 'the gate test reported no assertions at all' }
+    }
+    return [pscustomobject]@{ Ok = $true
+        Reason = ("{0} gate assertion(s) passed" -f $PassCount) }
+}
+
 function Test-DisclosuresClear {
     param([string]$Path = $null)
     $p = if ($Path) { $Path } else { Join-Path $RepoRoot 'docs/PENDING-DISCLOSURES.md' }
@@ -1266,11 +1382,27 @@ function Test-DisclosuresClear {
 
     $items = New-Object System.Collections.ArrayList
     $inPending = $false
+    $inComment = $false
     foreach ($line in (Get-Content -LiteralPath $p)) {
         if ($line -match '^##\s+Pending\s*$') { $inPending = $true; continue }
         if (-not $inPending) { continue }
-        # The commented-out template at the end of the file is not an entry.
-        if ($line -match '^\s*<!--') { break }
+        # A comment block is skipped, not treated as the end of the section.
+        #
+        # This used to `break` on the first one. The template in
+        # docs/PENDING-DISCLOSURES.md opens four lines below `## Pending` and
+        # runs to the end of the file, so the gate read four lines and stopped,
+        # and anything written below the template — which is where "use the
+        # template below" leads a person — was never seen. That is the precise
+        # failure this gate exists to prevent, in the one gate with a written
+        # history of being walked past. See docs/AUDIT-2026-09-14.md B3.
+        if ($inComment) {
+            if ($line -match '-->') { $inComment = $false }
+            continue
+        }
+        if ($line -match '^\s*<!--') {
+            if ($line -notmatch '-->') { $inComment = $true }
+            continue
+        }
         $t = $line.Trim()
         if ($t -eq '' -or $t -eq '*(empty)*') { continue }
         [void]$items.Add($t)
