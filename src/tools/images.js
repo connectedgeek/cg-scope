@@ -7,19 +7,22 @@
 // See the header of overlay.js for why these are not ES modules.
 //
 // ---------------------------------------------------------------------------
-// What this tool does not do, and why the gap is deliberate
+// Where the saving happens, and why it is not here
 // ---------------------------------------------------------------------------
-// It does not save files. The `downloads` permission was declared optional in
-// 0.1.0 for exactly this feature, never used, and removed in 0.6.0 with the
-// reasoning recorded under Settled in CLAUDE.md: saving every image on a page
-// is the feature that turns an inspector into a page copier, and that is a
-// second purpose rather than a bigger version of the first one.
+// chrome.downloads is not available to content scripts, and this is a content
+// script. Chrome permits an extension page, which the popup is but which
+// closes the moment the user clicks into the page, or a service worker. So
+// Download sends the selected urls to src/worker.js and that calls Chrome.
 //
-// That decision can be reversed. It has not been yet, so this tool stops at
-// the clipboard. The selection model, the filter and the grid are all built as
-// though a Save button existed, because if that decision is taken the button
-// is the only new part; and if it is never taken, nothing here is wasted,
-// because selecting a subset to copy is useful on its own.
+// Nothing about the selection crosses with them. The worker is handed a list
+// of urls and takes the tab from Chrome's own `sender`, not from anything this
+// file says, because a content script cannot lie about which tab it is in and
+// can say whatever it likes about everything else.
+//
+// The message name is checked against a list in src/shared/messages.js, which
+// the worker imports and the selftest walks. See trust boundary 3 in CLAUDE.md
+// for why that list exists and why naming the messages in the test instead
+// would have been the wrong shape.
 //
 // There is no middle path worth looking for. Reading image bytes needs either
 // the browser retrieving them on our behalf, which is the permission, or a
@@ -352,13 +355,26 @@
       const copyUrls = document.createElement('button');
       copyUrls.className = 'cgp-btn';
       copyUrls.type = 'button';
+      copyUrls.textContent = 'Copy URLs';
       const copyTable = document.createElement('button');
       copyTable.className = 'cgp-btn';
       copyTable.type = 'button';
       copyTable.textContent = 'Copy table';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'cgp-btn';
+      saveBtn.type = 'button';
+      saveBtn.textContent = 'Download';
       actions.appendChild(copyUrls);
       actions.appendChild(copyTable);
+      actions.appendChild(saveBtn);
       pane.appendChild(actions);
+
+      const tip = document.createElement('p');
+      tip.className = 'cgp-tip';
+      // The rule is not obvious and the alternative is a person selecting all
+      // thirteen images every time because they assume nothing means nothing.
+      tip.textContent = 'These act on your selection, or on everything shown when nothing is selected.';
+      pane.appendChild(tip);
 
       // --- state ------------------------------------------------------------
       function visible() {
@@ -386,15 +402,18 @@
           all.length === vis.length
             ? all.length + (all.length === 1 ? ' image' : ' images')
             : vis.length + ' of ' + all.length + ' images';
-        selCount.textContent = picked ? picked + ' selected' : 'none selected';
         allBox.checked = vis.length > 0 && picked === vis.length;
         allBox.indeterminate = picked > 0 && picked < vis.length;
+        // The count lives in the line above rather than in the button labels:
+        // three buttons whose text changes length do not fit a 430px row
+        // without reflowing every time the selection changes.
         const n = target().length;
-        copyUrls.textContent = picked
-          ? 'Copy ' + n + (n === 1 ? ' URL' : ' URLs')
-          : 'Copy all ' + n + (n === 1 ? ' URL' : ' URLs');
+        selCount.textContent = picked
+          ? picked + ' selected'
+          : vis.length + (vis.length === 1 ? ' shown' : ' shown');
         copyUrls.disabled = n === 0;
         copyTable.disabled = n === 0;
+        saveBtn.disabled = n === 0;
       }
 
       function renderChips() {
@@ -550,6 +569,47 @@
         const items = target();
         if (!items.length) return;
         write(asTable(items), copyTable, 'Copied');
+      });
+
+      saveBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const items = target();
+        if (!items.length) return;
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving';
+        setNote('');
+
+        chrome.runtime.sendMessage(
+          { type: 'cg-scope:download', urls: items.map((i) => i.url) },
+          (res) => {
+            saveBtn.textContent = 'Download';
+            refreshCounts();
+
+            // Checked before res, and never ignored. This is set when the
+            // worker did not answer at all, and without reading it the failure
+            // is a button that flickers and does nothing.
+            const err = chrome.runtime.lastError;
+            if (err) {
+              setNote('The extension background did not answer: ' + err.message, true);
+              return;
+            }
+            if (!res) {
+              setNote('The extension background answered with nothing.', true);
+              return;
+            }
+            if (!res.ok) {
+              setNote('Refused: ' + (res.reason || 'no reason given') + '.', true);
+              return;
+            }
+
+            const parts = [res.started + (res.started === 1 ? ' image sent' : ' images sent') +
+                           ' to Downloads, in ' + res.folder];
+            if (res.refused) parts.push(res.refused + ' skipped for an unsupported URL scheme');
+            if (res.failed) parts.push(res.failed + ' refused by Chrome, see the console');
+            setNote(parts.join('. ') + '.', !!(res.refused || res.failed));
+          }
+        );
       });
 
       allBox.addEventListener('click', (ev) => ev.stopPropagation());

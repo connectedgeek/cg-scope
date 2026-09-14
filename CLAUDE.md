@@ -61,6 +61,17 @@ paid for on the Connected Geek Diagnostic Tool and the reasoning is in
     privacy position of the extension. It is enforced by a build guard, not by
     good intentions.
 
+    **What this does and does not cover, since 0.10.0.** It is a rule about
+    constructs in our code, and `chrome.downloads.download` is none of them:
+    the browser retrieves the file, at the user's explicit instruction, the way
+    it would if they clicked a link. So the extension can now cause traffic
+    that it does not itself originate. The distinction is real and it is also
+    exactly the kind of distinction that gets stretched later, so the boundary
+    is written down rather than left to be re-derived: this extension may ask
+    the browser to retrieve something the user pointed at, and may never
+    retrieve anything itself. Nothing is sent anywhere in either case, which is
+    the property the invariant exists to protect.
+
 ---
 
 ## What makes each piece live
@@ -72,6 +83,7 @@ Filled in per component, because "I saved the file" answers none of these.
 | Extension code, development | The reload button on the card in `chrome://extensions` | Trigger a tool and watch new behaviour |
 | A tool already injected into an open tab | **Nothing.** Reloading the extension does not touch code already running in a page. | Reload the page itself. Otherwise you are debugging a ghost. |
 | Popup UI | Closing and reopening the popup. It is re-created each time. | |
+| Service worker | The reload button on the card in `chrome://extensions`. A worker already running keeps running the old code until it is terminated. | `chrome://extensions` shows it as "service worker"; click it for its console and check the code you expect is what runs |
 | `chrome.storage.local` contents | Only code that writes to it | Read it back in the popup or via DevTools on the extension page |
 | Packaged zip | `build.ps1 package`, which builds it, reads it back, and deletes it if it is wrong | Read the archive's **entry names**, not the extracted files. An unzipper can quietly compensate for a malformed name; the entry name is what the store receives. `tar -tf` ships with Windows and is not the library that wrote the file. |
 | Unlisted Web Store item | Upload **and** publish, then Chrome pushing it to the profile | The version in `chrome://extensions`, never the dashboard |
@@ -189,6 +201,7 @@ Web Store submission if there ever is one.
 | `activeTab` | Every tool. Grants access to the current tab at the moment the toolbar icon is clicked, and expires. No install warning, no host list. |
 | `scripting` | `chrome.scripting.executeScript`, which is how a tool module reaches the page. `activeTab` grants the right; this is the API that exercises it. |
 | `storage` | The color picker's recent-colors list and its copy-on-sample preference, in `chrome.storage.local`. |
+| `downloads` | The Images tool's Download button, by way of `src/worker.js`. The permission and the feature arrive in the same commit, which is the remedy recorded below for what `storage` did wrong. |
 
 **Deliberately absent, and each absence is a decision:**
 
@@ -205,12 +218,6 @@ Web Store submission if there ever is one.
 - **No `debugger`.** It would give a cleaner full-page capture path, and this
   is not a screenshot tool.
 
-- **No `downloads`.** It was declared as optional in 0.1.0 for an image
-  inventory that would save files, and removed in 0.6.0 without ever being
-  used. Saving every image on a page is the feature that turns an inspector
-  into a page copier, the page report lists images instead, and the browser's
-  own context menu saves one. Three permissions remain and all three are
-  exercised by code that exists.
 
 **A limit of the permission guard, found in 0.5.0 and worth remembering:**
 
@@ -235,14 +242,28 @@ it was removed.
 2. **Popup to tool module.** Thin, because `executeScript` passes arguments
    directly rather than by message. Anything crossing it originated here, not
    in the page.
-3. **Tool module to service worker. Does not exist**, because there is no
-   service worker. On the previous project the defect that reached production
-   lived on exactly this boundary: one operation out of four that was not
-   gated, because it returned no data and therefore looked harmless. Deleting
-   the boundary is better than gating it. If a worker is ever added, the
-   messages it accepts are enumerated from a list in code, and the test walks
-   that list and asserts each is refused when it should be. A test that names
-   the messages individually goes stale the day someone adds a fifth.
+3. **Tool module to service worker. Exists since 0.10.0.** On the previous
+   project the defect that reached production lived on exactly this boundary:
+   one operation out of four that was not gated, because it returned no data
+   and therefore looked harmless.
+
+   This paragraph used to say the boundary did not exist and set the terms for
+   the day it did: "the messages it accepts are enumerated from a list in code,
+   and the test walks that list and asserts each is refused when it should be.
+   A test that names the messages individually goes stale the day someone adds
+   a fifth." Both were met before the worker shipped.
+
+   - `src/shared/messages.js` holds `ACCEPTED`, frozen, and a `validate` that
+     returns only the values a caller may act on. The worker uses the returned
+     urls, never the ones it was sent.
+   - A type on `ACCEPTED` with no validator is **refused**, so appearing on the
+     list is not by itself permission to act.
+   - `tools/messages.test.mjs` walks `ACCEPTED` and looks fixtures up by name.
+     A type added with no fixture fails the test. Both of those were confirmed
+     by adding an invented type and watching it go red, once with no fixture
+     and once with a fixture and no validator.
+   - The tab a download is filed under comes from Chrome's `sender`, not from
+     the message. A content script cannot lie about which tab it is in.
 4. **Extension to the user's data.** Nothing is collected and nothing is
    transmitted. This is not a promise, it is a testable property, and invariant
    11 is the test.
@@ -481,6 +502,28 @@ whatever is left.
 
 ### Confirmed, so that they are not re-litigated
 
+- **2026-09-14, the service worker and the Download button, 0.10.0.** The
+  worker registered, the message passed the gate, and nine images from
+  `connectedgeek.net/contact-us` arrived in `Downloads\cg-scope\connectedgeek.net\`
+  with the CDN's own hex filenames intact. Nine is every image the tool found,
+  which also exercises the rule that the buttons act on everything shown when
+  nothing is selected. The folder name came from Chrome's `sender.tab.url`, not
+  from the message.
+
+  Also confirmed by construction rather than by a run, on 2026-09-13: the gate
+  test cannot go stale. Adding an invented type to `ACCEPTED` with no fixture
+  turned it red; adding one with a fixture but no validator turned it red in a
+  different case, because `validate` refuses an accepted type it has no
+  validator for. Both were watched, then reverted.
+
+  **Not confirmed.** The refusal path has never run in Chrome: no real message
+  has been rejected, only fixtures. The `data:` URI naming branch in
+  `src/worker.js` has never executed, because that page embeds nothing. The
+  `MAX_URLS` ceiling has never been reached. And Chrome did not ask about
+  multiple downloads, which may mean it does not for extension-initiated
+  downloads or may mean nine is under whatever threshold it uses; this does not
+  distinguish those.
+
 - **2026-09-13, the top layer fix, 0.8.0.** Four checks, all in Chrome. Trap 2
   with the transform on: a drag reporting `X, Y = 145, 230` drew at CSS 144.9,
   229, so the rectangle lands on the reported coordinates instead of nineteen
@@ -605,6 +648,15 @@ whatever is left.
    which opens the popup, which does the injecting. Omitting it deletes the
    largest category of Manifest V3 defects, described at length in
    `docs/CHROME-EXTENSION-TRAPS.md`, before the project starts.
+
+   **v1 ended at 0.10.0.** `src/worker.js` exists, because `chrome.downloads`
+   is not available to content scripts and the five tools are content scripts,
+   so the Images tool's Download button had no other caller. Item 3 below said
+   how this was to be done if it ever happened, and that is what was followed:
+   planned, not bolted on. The worker holds no state (invariant 9), accepts
+   only what `src/shared/messages.js` lists (trust boundary 3), and does one
+   thing. The original reasoning still stands for everything else: no tool
+   starts without a click, and nothing else belongs in there.
 3. **No keyboard shortcuts in v1.** `chrome.commands` needs somewhere to
    deliver the event, which means a service worker, which reopens item 2. If
    shortcuts are wanted later, the worker gets planned properly rather than

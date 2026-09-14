@@ -7,9 +7,12 @@
 // never host anything that needs to run while the user interacts with the
 // page. That is what the injected tool modules are for.
 //
-// There is no service worker in this extension. Nothing here posts a message
-// to one, and nothing should be added that assumes one exists without first
-// reading "Settled" item 2 in CLAUDE.md.
+// There is a service worker since 0.10.0, and this file still does not talk to
+// it. src/worker.js exists for one reason, chrome.downloads being unavailable
+// to content scripts, and the Images tool messages it directly. Nothing should
+// be routed through here on the assumption that the popup is the natural place
+// for privileged work: the popup is destroyed on the click that starts a tool,
+// which is the whole reason the worker exists.
 
 import { classifyTab } from '../shared/pages.js';
 
@@ -38,7 +41,7 @@ const TOOLS = [
   {
     id: 'images',
     label: 'Images',
-    hint: 'Find, filter, copy',
+    hint: 'Find, filter, save',
     files: ['src/shared/overlay.js', 'src/shared/panel.js', 'src/tools/images.js'],
   },
   {

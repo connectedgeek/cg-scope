@@ -1114,6 +1114,49 @@ function f() {
             $failures++
         }
 
+        # --- Case 10e: what the service worker will accept -------------------
+        # Trust boundary 3 requires that the worker's accepted messages are
+        # enumerated in code and that the test walks that list rather than
+        # naming the messages, so that adding one cannot go untested. The walk
+        # lives in tools/messages.test.mjs because it has to import the module
+        # the worker imports; this relays its lines into one report.
+        $gateTest = Join-Path $RepoRoot 'tools/messages.test.mjs'
+        if (-not $nodeCmd) {
+            Write-Host '  SKIP  message gate cases: node was not found on PATH' -ForegroundColor Yellow
+        }
+        elseif (-not (Test-Path -LiteralPath $gateTest)) {
+            # Missing is a failure, not a skip. The boundary says this test
+            # exists; a worker with no gate test is the condition it forbids.
+            $cases++
+            $failures++
+            Write-Host '  FAIL  tools/messages.test.mjs is missing, and trust boundary 3 requires it' -ForegroundColor Red
+        }
+        else {
+            $prevGate = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try { $gateOut = & $nodeCmd $gateTest 2>&1 }
+            finally { $ErrorActionPreference = $prevGate }
+
+            foreach ($item in @($gateOut)) {
+                $line = if ($item -is [System.Management.Automation.ErrorRecord]) {
+                    $item.Exception.Message
+                } else { [string]$item }
+                if (-not $line -or -not $line.Trim()) { continue }
+                if ($line -like 'pass *') {
+                    $cases++
+                    Write-Host ("  {0}" -f $line) -ForegroundColor Green
+                }
+                elseif ($line -like 'FAIL *') {
+                    $cases++
+                    $failures++
+                    Write-Host ("  {0}" -f $line) -ForegroundColor Red
+                }
+                else {
+                    Write-Host ("        {0}" -f $line) -ForegroundColor DarkGray
+                }
+            }
+        }
+
         # --- Case 11: the disclosure gate ------------------------------------
         # This is the gate that was written in bold in two documents on the
         # previous project and walked past anyway. It has to be provably able
