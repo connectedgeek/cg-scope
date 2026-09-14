@@ -543,13 +543,22 @@ whatever is left.
   replaced, with Chrome appending `(1)`, which is `conflictAction: 'uniquify'`
   doing the job it was chosen for over `overwrite`.
 
-  **Open, and not a defect in this extension as far as anything shows.** A
-  Chrome "Save As" dialog appeared despite `saveAs: false`. The API
-  documentation defines `saveAs` as requesting a chooser and says nothing about
-  whether the browser's own "Ask where to save each file before downloading"
-  setting overrides a `false`, so which it is has not been established. There is
-  no API to read that setting. 0.11.2 states the possibility in the panel rather
-  than leaving someone to meet it at the fourth prompt of nine.
+  **Settled the same day, and not a defect.** A Chrome "Save As" dialog appeared
+  despite `saveAs: false`. Larry confirmed that "Ask where to save each file
+  before downloading" is switched on in his Chrome, so the browser setting
+  overrides the flag. The API documentation defines `saveAs` as requesting a
+  chooser and does not mention the interaction, which is why this was not
+  assumed. There is no API to read the setting, so the panel names the
+  possibility and says how to turn it off.
+
+  **Zipping a batch was considered and is impossible here.** A zip needs the
+  image bytes, and all three routes to them are closed: retrieving them is a
+  network request, which invariant 11 forbids, the guard rejects and which would
+  need host permissions; a canvas throws a SecurityError for any cross-origin
+  image without CORS, which is most of them, and would re-encode the rest so
+  that "save the images" quietly meant "save lossy copies"; and the downloads
+  API has no way to suppress the chooser. The one-line answer for a user is the
+  Chrome setting, which is what the panel now says.
 
 - **2026-09-14, the service worker and the Download button, 0.10.0.** The
   worker registered, the message passed the gate, and nine images from

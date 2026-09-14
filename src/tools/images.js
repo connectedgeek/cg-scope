@@ -381,7 +381,8 @@
       tip.textContent =
         'These act on your selection, or on everything shown when nothing is ' +
         'selected. If Chrome is set to ask where to save each file, Download ' +
-        'will prompt once per image.';
+        'prompts once per image; turn that off in Chrome settings, under ' +
+        'Downloads, to save a batch in one go.';
       pane.appendChild(tip);
 
       // --- state ------------------------------------------------------------
