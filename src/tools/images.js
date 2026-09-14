@@ -371,9 +371,17 @@
 
       const tip = document.createElement('p');
       tip.className = 'cgp-tip';
-      // The rule is not obvious and the alternative is a person selecting all
-      // thirteen images every time because they assume nothing means nothing.
-      tip.textContent = 'These act on your selection, or on everything shown when nothing is selected.';
+      // Two things a person cannot work out by looking. The first is the rule,
+      // and the alternative is selecting all thirteen images every time because
+      // nothing looks like it means nothing. The second is Chrome's own "Ask
+      // where to save each file" setting, which turns a batch of nine into nine
+      // dialogs; there is no API to read that setting, so the only honest
+      // option is to say it might happen rather than let someone discover it at
+      // the fourth prompt and conclude the tool is broken.
+      tip.textContent =
+        'These act on your selection, or on everything shown when nothing is ' +
+        'selected. If Chrome is set to ask where to save each file, Download ' +
+        'will prompt once per image.';
       pane.appendChild(tip);
 
       // --- state ------------------------------------------------------------

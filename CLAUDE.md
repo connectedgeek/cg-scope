@@ -534,6 +534,23 @@ whatever is left.
 
 ### Confirmed, so that they are not re-litigated
 
+- **2026-09-14, the audit fixes, 0.11.0 and 0.11.1, in Chrome.** All five tools
+  used on a real page and reported working as designed. The Images tool
+  specifically: nine images collected from `connectedgeek.net`, the grid
+  rendering format badges, dimensions and repeat counts (`450 x 66 x2`, one card
+  for a logo used twice), and Download writing all nine into
+  `Downloads/cg-scope/connectedgeek.net/`. A second run added rather than
+  replaced, with Chrome appending `(1)`, which is `conflictAction: 'uniquify'`
+  doing the job it was chosen for over `overwrite`.
+
+  **Open, and not a defect in this extension as far as anything shows.** A
+  Chrome "Save As" dialog appeared despite `saveAs: false`. The API
+  documentation defines `saveAs` as requesting a chooser and says nothing about
+  whether the browser's own "Ask where to save each file before downloading"
+  setting overrides a `false`, so which it is has not been established. There is
+  no API to read that setting. 0.11.2 states the possibility in the panel rather
+  than leaving someone to meet it at the fourth prompt of nine.
+
 - **2026-09-14, the service worker and the Download button, 0.10.0.** The
   worker registered, the message passed the gate, and nine images from
   `connectedgeek.net/contact-us` arrived in `Downloads\cg-scope\connectedgeek.net\`
