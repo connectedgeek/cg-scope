@@ -17,9 +17,15 @@ like they only need a small edit.
 
 Everything else in the repository is downstream of that file, and this one is
 deliberately thin so that the two cannot drift apart. Its Layout section names
-every other file and what each is for; that list is not repeated here, because
-a description written in two places is a description that will eventually
-disagree with itself.
+the directories and the files that matter, and that list is not repeated here,
+because a description written in two places is a description that will
+eventually disagree with itself.
+
+This paragraph used to promise that Layout named *every* file. It did not: it
+was missing `src/worker.js` and `src/shared/messages.js`, the two files that
+implement the whole service-worker trust boundary. The promise was corrected
+rather than the list padded, because a guarantee nothing enforces is the kind
+of claim this project keeps catching itself making.
 
 ## Running it
 

@@ -56,10 +56,10 @@
   ---------------------------------------------------------------------------
     1. STORE URL. Marked EDIT: below. The button currently states the listing
        does not exist rather than linking nowhere.
-    2. The GitHub link is live on this page and the repository is still
-       private, so it 404s for visitors. Either make the repository public or
-       remove that link. A page inviting people to check the source, linking
-       to a 404, is worse than a page that does not invite them.
+
+    Resolved 2026-09-14: the repository is public, so "Read the source" and
+    every claim that depends on it are now true. Confirmed by fetching
+    raw.githubusercontent.com, which does not serve private repositories.
 
   The panels below are not screenshots. They are the extension's own CSS values
   rebuilt in HTML: accurate, and drawings. The Web Store requires genuine
@@ -306,7 +306,13 @@
       CG Scope tells you how the page in front of you is put together. Measure
       distances, read an element's real spacing, type and colour, sample any
       pixel on screen, see what the page weighs, and save the images off it.
-      <span class="pop">It makes no network requests at all.</span>
+      <span class="pop">It contains no networking code at all.</span>
+    </p>
+    <p class="lede" style="font-size:16px;color:var(--muted);margin-top:-18px">
+      Two honest exceptions, both of them the browser doing what you asked:
+      pressing Download makes Chrome retrieve the images you picked, and the
+      image tools show thumbnails, which the browser loads the same way the
+      page already did. Nothing is sent anywhere, ever, by anything here.
     </p>
 
     <div class="cta">
@@ -326,10 +332,21 @@
       </p>
       <p>
         The guard refuses to build if <code>fetch</code>,
-        <code>XMLHttpRequest</code>, <code>sendBeacon</code>, a WebSocket, a
-        remote script tag or a dynamic URL import appears anywhere in the
-        extension's source. Its own test suite breaks it on purpose and checks
-        that it goes red, because a guard that has never failed is decoration.
+        <code>XMLHttpRequest</code>, <code>sendBeacon</code>,
+        <code>EventSource</code>, <code>WebSocket</code>,
+        <code>RTCPeerConnection</code>, <code>importScripts</code>,
+        <code>eval</code>, <code>new Function</code>, a dynamic import or an
+        absolute URL appears anywhere in the shipped JavaScript. Its own test
+        suite breaks it on purpose and checks that it goes red, because a guard
+        that has never failed is decoration.
+      </p>
+      <p>
+        Being precise about what that is worth: it is a regular expression over
+        the source, so it stops networking code being added by accident, which
+        is the realistic risk here. It would not stop somebody determined to
+        hide it, and this page is not going to pretend otherwise. The claim it
+        supports is the one above it: there is no networking code, and you can
+        read all of it.
       </p>
     </div>
   </div>
@@ -351,7 +368,7 @@
         </div>
         <div class="tool">
           <h3><span class="dot"></span>Inspector</h3>
-          <p>Point at an element for its computed spacing, typography, borders and colours. Also lists every colour and font family on the page.</p>
+          <p>Point at an element for its computed spacing, typography, borders and colours. Also lists the colours and font families across the page, scanning up to six thousand elements and saying so when it stops.</p>
         </div>
         <div class="tool">
           <h3><span class="dot"></span>Color picker</h3>
@@ -359,7 +376,7 @@
         </div>
         <div class="tool">
           <h3><span class="dot"></span>Images</h3>
-          <p>Every image on the page in a grid, filtered by format, with dimensions and missing alt text flagged. Copy the URLs, copy a table, or save the files.</p>
+          <p>Every <code>img</code> on the page in a grid, filtered by format, with dimensions and missing alt text flagged. Copy the URLs, copy a table, or save the files. Background images set in CSS, inline SVG and canvas are not counted, and the tool says so.</p>
         </div>
         <div class="tool">
           <h3><span class="dot"></span>Page report</h3>
@@ -438,9 +455,13 @@
           <div>
             <h3>Watch it on the network tab</h3>
             <p>
-              Open DevTools, go to Network, and use every tool on any page.
-              Nothing appears, because nothing is sent. There is no server to
-              talk to and no account to belong to.
+              Open DevTools, go to Network, and use the Ruler, the Inspector
+              or the Color picker on any page. Nothing appears, because nothing
+              is sent. There is no server to talk to and no account to belong
+              to. The two image tools are the exception, and not a secret one:
+              they draw thumbnails, so the browser may re-request an image it
+              has dropped from cache, and Download asks it to retrieve the
+              files you picked.
             </p>
           </div>
         </div>
@@ -472,9 +493,11 @@
             <h3>Run the guard yourself</h3>
             <p>
               The source is public and the check that enforces all of this is
-              one command. It scans the shipped code, refuses on any networking
-              construct, parses every file, and its own test suite proves each
-              guard is capable of failing.
+              one command. It scans the shipped code, refuses on the networking
+              constructs listed above, parses every JavaScript file it ships,
+              and its own test suite proves each guard is capable of failing.
+              The second command is that test suite: eighty-three cases, most
+              of which assert that a guard refuses something.
             </p>
 <pre>.\build.ps1 check
 .\build.ps1 selftest</pre>
@@ -510,7 +533,7 @@
             </tr>
             <tr>
               <td><code>storage</code></td>
-              <td>The colour picker's last dozen colours and its copy-on-sample setting. Stored on your machine, never sent anywhere.</td>
+              <td>The colour picker's last dozen colours, and its two settings: whether sampling copies automatically, and which format it copies. Stored on your machine, never sent anywhere.</td>
             </tr>
             <tr>
               <td><code>downloads</code></td>
@@ -530,7 +553,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="privacy">
     <div class="wrap prose">
       <p class="eyebrow">Privacy</p>
       <h2>The whole policy</h2>
@@ -542,10 +565,12 @@
         in the extension by which that could happen.
       </p>
       <p>
-        Two things are stored on your own computer and nowhere else: the last
-        twelve colours you sampled, and whether you have turned on
-        copy-on-sample. Both live in your browser's local extension storage.
-        Removing the extension removes them.
+        Three things are stored on your own computer and nowhere else: the
+        last twelve colours you sampled, whether you have turned on
+        copy-on-sample, and which of HEX, RGB or HSL that copies. They live in
+        your browser's local extension storage. Removing the extension removes
+        them. That list is exhaustive, and it is the same list submitted on the
+        Chrome Web Store privacy form.
       </p>
       <p>
         When you click the toolbar icon, the popup reads the address of the tab

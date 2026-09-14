@@ -24,12 +24,18 @@
 // the same is not a measurement.
 //
 // ---------------------------------------------------------------------------
-// Why there is no "download all images"
+// Why saving images is not in this tool
 // ---------------------------------------------------------------------------
-// It is the feature that turns an inspector into a page copier, and it is the
-// only thing the `downloads` permission was ever for. Both are gone. The tool
-// lists what the page loads; saving one is what the browser's own context menu
-// is for.
+// It is in the Images tool, since 0.10.0, along with the `downloads`
+// permission. This header said "both are gone" until 0.11.0, four versions
+// after they came back.
+//
+// The division is deliberate and worth keeping. This tool answers "what does
+// this page weigh", so it counts elements: an image used four times is
+// downloaded once and laid out four times. The Images tool answers "which
+// images are on this page", so it collapses repeats and offers to save them.
+// Two questions, two tools, and the day they both grow a grid of thumbnails is
+// the day one of them should be deleted.
 
 (() => {
   'use strict';

@@ -3,8 +3,8 @@
 A browser extension built by Connected Geek for its own use. It is a one-click
 way to look closely at the page in front of you: measure distances, read
 computed spacing, typography and color, sample a color anywhere on screen, see
-what images the page loads and what they weigh, and preview common viewport
-widths.
+what images the page loads and what they weigh, and copy or save what you
+find.
 
 It deliberately does not copy pages, does not rewrite them, does not annotate
 them, does not store a library of anything, does not have an account, and does
@@ -67,10 +67,14 @@ paid for on the Connected Geek Diagnostic Tool and the reasoning is in
 8. **Least permission that works.** Every permission in `manifest.json` has an
    entry under "Permissions" below naming the feature that needs it. A
    permission whose feature was deleted is removed in the same commit.
-9. **The service worker holds no state that matters.** This project has no
-   service worker (see "Settled"). If one is ever added, this invariant applies
-   from its first line: anything that must survive is in `chrome.storage`, and
-   termination is assumed between any two events.
+9. **The service worker holds no state that matters.** `src/worker.js` exists
+   since 0.11.0 and this applies to it: anything that must survive is in
+   `chrome.storage`, and termination is assumed between any two events. It has
+   no module-scope mutable state, no cache, no queue and no timer.
+   Until 0.11.0 this invariant still opened "This project has no service
+   worker", four versions after one was added, while the table below had a row
+   for it and Settled item 2 recorded that v1 had ended. Found by the audit,
+   not by anybody reading the file.
 10. **The published policy never says less than the extension does.** While the
     extension collects nothing there is nothing to publish, which is the point.
     Enforced by `docs/PENDING-DISCLOSURES.md` if that ever changes.
@@ -116,7 +120,8 @@ already have a previous change.
 ## Commands
 
 ```
-.\build.ps1 check      guards, lint and tests. No artifacts produced.
+.\build.ps1 check      the guards. No lint, no tests, no artifacts.
+                       Its own epilogue lists what it did not check.
 .\build.ps1 selftest   prove the guards can fail, against fixtures
 .\build.ps1 version    report the extension version from manifest.json
 .\build.ps1 package    everything check does, then produce the zip
@@ -142,20 +147,28 @@ recorded under "Confirmed" below.
 
 ```
 manifest.json           the permission surface; read it before believing anything
+build.ps1               every guard, the selftest, and the package step
 src/
+  worker.js             the service worker. One job, no state. See invariant 9.
   popup/                the launcher. The only persistent UI. Closes on outside click.
   tools/                one module per tool, injected on demand. Isolated world.
                         Hostile page assumed. Never declared as a static content script.
-  shared/               overlay host, storage wrapper, formatting
+  shared/               overlay host, panel, page classification, and
+                        messages.js, the list of what the worker will accept
+site/index.html         the landing page at scope.connectedgeek.net
+tools/                  not shipped. The message gate test and the png tool.
 docs/
   CHROME-EXTENSION-TRAPS.md   platform behaviour that is not obvious
   RELEASING.md                how a version reaches a browser
   PENDING-DISCLOSURES.md      changes owed to a published privacy policy
+  AUDIT-2026-09-14.md         the pre-publication audit and what it found
 test/
 LESSONS-LEARNED.md      why the invariants exist. Read once, by a person.
 ```
 
-There is no `src/background/`. That is deliberate. See "Settled".
+There is no `src/background/`. The service worker is a single file at
+`src/worker.js` because it does a single thing; a directory would invite a
+second. See "Settled" item 2 for why it exists at all.
 
 There is no build or bundling step. What is in `src/` is byte-for-byte what
 Chrome runs, which is also why "the full functionality is discernible from the
@@ -219,7 +232,7 @@ Web Store submission if there ever is one.
 |---|---|
 | `activeTab` | Every tool. Grants access to the current tab at the moment the toolbar icon is clicked, and expires. No install warning, no host list. |
 | `scripting` | `chrome.scripting.executeScript`, which is how a tool module reaches the page. `activeTab` grants the right; this is the API that exercises it. |
-| `storage` | The color picker's recent-colors list and its copy-on-sample preference, in `chrome.storage.local`. |
+| `storage` | The color picker's recent-colors list and its two preferences, copy-on-sample and which format that copies, in `chrome.storage.local`. Everything stored is listed here and on the landing page, and those enumerations must stay exhaustive: the dashboard privacy form is built from them. |
 | `downloads` | The Images tool's Download button, by way of `src/worker.js`. The permission and the feature arrive in the same commit, which is the remedy recorded below for what `storage` did wrong. |
 
 **Deliberately absent, and each absence is a decision:**
