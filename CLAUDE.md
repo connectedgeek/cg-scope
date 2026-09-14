@@ -129,6 +129,14 @@ already have a previous change.
 
 One script with arguments, not two scripts. Two near-identical scripts diverge.
 
+**`check` also runs as a pre-commit hook**, once per clone:
+
+```
+git config core.hooksPath tools/hooks
+```
+
+See defect log, 2026-09-14, for why a guard that only prints is not a guard.
+
 **The package step refuses when:** `check` fails, which covers the version, the
 version bump, the permission justifications and the network scan;
 `docs/PENDING-DISCLOSURES.md` lists an unresolved item; the working tree is
@@ -508,6 +516,44 @@ commit after it is the green one.
 backslash entry names was never established, and is now moot because no such
 archive will be produced. If the question returns, the test is to list the
 entries with a reader that is not the library that wrote them.
+
+### 2026-09-14: a guard failed, said so, and the commit happened anyway
+
+**What it did.** `build.ps1 check` printed `FAIL: the version was not bumped`
+and named `src/tools/images.js`. The next two commands in the sequence were
+`git add -A` and `git commit`, and they ran. Commit `c9d2613` changed a shipping
+file while still declaring version 0.11.2, which `fd4f083` had already
+published. Two commits, two different extensions, one version number.
+
+This is the defect the Versioning section exists to prevent, described there in
+its previous-project form: a version file silently failed to update, the build
+stamped the stale value onto six binaries, and two programs shipped under one
+number. Nothing was published this time, so it stopped at the repository.
+
+**Why it survived.** Not because the guard was wrong. It was right, it was
+loud, it named the file, and it exited non-zero. It survived because the guard
+printed to a terminal and the next command did not care what it said.
+
+The proximate cause was the instructions: `check`, `git add -A` and
+`git commit` were handed over as one block, with "if it refuses, bump the
+version" written as prose above it. A person moving through a list runs the
+list. This is the second gate walked past in one day, the first being the
+disclosure gate, and both times the gate and the thing it gated were in the same
+paste.
+
+**What now prevents it.** `tools/hooks/pre-commit` runs `check` and refuses the
+commit on a non-zero exit. Enabled per clone with:
+
+```
+git config core.hooksPath tools/hooks
+```
+
+`git commit --no-verify` still gets past it, deliberately: a hook nobody can
+bypass is a hook somebody disables permanently the first time it is wrong.
+
+**The other half of the remedy is procedural and is mine.** A command whose
+refusal should stop the next command does not go in the same block as that
+command. The gate goes on its own, and the next step waits for what it said.
 
 ## Unverified paths
 

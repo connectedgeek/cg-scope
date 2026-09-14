@@ -1,0 +1,65 @@
+#!/bin/sh
+#
+# CG Scope: refuse a commit that build.ps1 check refuses.
+#
+# Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+# Co-Authored-By: Connected Geek, LLC <support@connectedgeek.net>
+#
+# ---------------------------------------------------------------------------
+# Why this exists
+# ---------------------------------------------------------------------------
+# On 2026-09-14 the bump guard failed, printed FAIL, named the file, and the
+# commit happened anyway. Two commits then carried the same version with
+# different contents, which is the defect the whole versioning rule exists to
+# prevent and which cost real debugging on the previous project.
+#
+# The guard was not wrong and the person was not careless. The guard printed to
+# a terminal and the next command in the sequence did not care what it said. A
+# refusal that only a human enforces is a refusal that gets enforced until the
+# day somebody is moving quickly.
+#
+# So the check now sits between the intent and the commit, where it cannot be
+# scrolled past.
+#
+# ---------------------------------------------------------------------------
+# Installing it
+# ---------------------------------------------------------------------------
+# Hooks in .git/hooks are not versioned and do not travel with a clone, so this
+# lives in tools/hooks and git is pointed at it. Once per clone:
+#
+#     git config core.hooksPath tools/hooks
+#
+# On Windows, Git for Windows runs hooks under its bundled sh, which is why
+# this is a shell script that shells out to PowerShell rather than a .ps1.
+#
+# ---------------------------------------------------------------------------
+# Getting past it on purpose
+# ---------------------------------------------------------------------------
+#     git commit --no-verify
+#
+# That is deliberately available. A hook you cannot bypass is a hook people
+# disable permanently the first time it is wrong. Use it for a commit that
+# touches no shipping file when the guard is being obtuse, and not as a habit.
+
+if [ -z "$CG_SCOPE_SKIP_CHECK" ]; then
+    # -NoProfile so a machine with a slow or opinionated profile behaves the
+    # same as a clean one. -ExecutionPolicy Bypass because a hook should not
+    # fail for a reason that has nothing to do with the code.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./build.ps1 check
+    status=$?
+
+    if [ $status -ne 0 ]; then
+        echo ""
+        echo "COMMIT REFUSED: build.ps1 check exited $status."
+        echo ""
+        echo "  Exit 1 is a guard that failed. Read what it named above."
+        echo "  Exit 2 is a guard that could not run, which is not a pass."
+        echo ""
+        echo "  If you are certain this commit should proceed anyway:"
+        echo "      git commit --no-verify"
+        echo ""
+        exit 1
+    fi
+fi
+
+exit 0
