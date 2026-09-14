@@ -616,6 +616,54 @@ places, and they are expected to agree: this file, `manifest.json`, the honesty
 block in `check`, and `docs/STORE-LISTING.md`. The permission guard enforces
 agreement between the first two. The other two are read by people.
 
+### 2026-09-14: the live page was declared stale on the word of a summariser
+
+**What it did.** The assistant reported that `scope.connectedgeek.net` was
+serving the pre-correction page: no `Manage your downloads`, the old permissions
+sentence still present, and a paragraph it quoted verbatim as being on the live
+page. On that basis it recommended abandoning GHL, moving the subdomain to
+GitHub Pages, and possibly deleting `site/index.html` from the repository.
+
+All of it was false. The page was current and had been the whole time. Fetching
+the bytes and testing the strings took one command and returned
+`hasManageDownloads: true`, with both of the other strings absent.
+
+The quoted paragraph is the part worth dwelling on. It was taken as evidence of
+an older revision still being served, which at least sounded like a real
+mechanism. `git log -S` over the full history of `site/index.html` returns
+nothing for it. That sentence has never existed in the file in any commit. The
+tool did not surface stale content, it produced content, and it was quoted back
+as though it had been read off the wire.
+
+**Why it survived.** The check was run with a tool that converts the page to
+markdown and has a small model answer a question about it. Its answer is an
+opinion about a lossy conversion, not a string test, and the distinction is the
+whole of invariant 2. The tool also returned a quotation attributed to a heading
+it did not sit under. That inconsistency was noticed, said out loud, and then
+disregarded, and a hosting recommendation was built on top of it.
+
+**The rule, which already existed.** Verify by content. A tool reporting an
+answer is not the content. This is the same failure as trusting a transfer that
+reports `written`, except that the stale-bytes defect has a recorded remedy and
+this one was reasoned past.
+
+It is also worse in kind. A stale write returns real bytes from the wrong
+moment. A summarising tool can return bytes that were never anywhere, phrased
+with the same confidence as the true parts of its answer, and there is no
+internal tell separating the two.
+
+**What now prevents it.** Nothing structural, and there is no guard to write:
+nothing in this repository can reach the host. What changed is the recorded
+method. A claim about what a URL serves is made by fetching it and testing the
+string, with the command written down next to the claim so the next person can
+re-run it rather than believe it. The command is in Outstanding.
+
+**Second-order damage worth noting.** The false finding was committed. The
+commit message and a defect-log entry both asserted the page was stale, and both
+had to be rewritten before the commit was pushed. A wrong conclusion that
+reaches the log is worse than one that stays in conversation, because the log is
+the thing later work treats as settled.
+
 ## Unverified paths
 
 Written down rather than remembered, because invariant 1 is the one that keeps
@@ -851,6 +899,23 @@ whatever is left.
 ## Outstanding, in priority order
 
 Each item names **what proves it**, because an item without that is a wish.
+
+**The landing page is deployed by hand and nothing here can tell.** Every guard
+in `build.ps1` reads the working tree. `site/index.html` is pasted into a GHL
+page and served through Cloudflare, so a correct file in `site/` and a stale
+page at `scope.connectedgeek.net` would look identical to `check`, to
+`selftest`, and to a clean `git status`. A commit is not a deployment.
+
+Proved by: fetching the URL and testing the served bytes for a string that only
+the current revision contains. Not by asking a summarising tool whether the
+phrase is there. As of 2026-09-14 the served page does contain
+`Manage your downloads`, so it is current.
+
+```js
+const r = await fetch('https://scope.connectedgeek.net/?cb=' + Date.now(), { cache: 'no-store' });
+const h = await r.text();
+h.includes('Manage your downloads');   // must be true
+```
 
 **Done:** 0 through 8. The repository skeleton, the build guards and their
 selftest, the manifest and popup, the overlay host, the ruler, the inspector
