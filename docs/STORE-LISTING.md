@@ -8,6 +8,16 @@ of it. `docs/RELEASING.md` B6 is the procedure; this is the text.
 permission table is that all four say the same thing. If a field here needs to
 change, change it in `CLAUDE.md` first, where the reasoning lives, then here.
 
+**How to read this document.** Everything inside a fenced code block is what
+goes in the dashboard, verbatim. Everything outside one is reasoning about it
+and must never be pasted.
+
+That distinction is stated because it failed. On 2026-09-15 the Description
+field was filled with the paragraph explaining why the category is Developer
+Tools, because the explanation sat next to the value in ordinary prose and read
+like copy. Every paste-ready value is now in a fence, including one-word ones
+that did not seem to need it.
+
 ---
 
 ## Name
@@ -27,7 +37,9 @@ Inspect a page's measurements, spacing, type, colors and images, then copy or sa
 
 ## Category
 
-`Developer Tools`.
+```
+Developer Tools
+```
 
 Not Productivity, not Accessibility. The alt-text flagging is a feature of an
 inspection tool rather than an accessibility product, and miscategorising to
@@ -64,8 +76,8 @@ Drag a box anywhere and read its width, height, position and ratio. Click any
 value to copy it, or copy ready-made CSS.
 
 INSPECTOR
-Point at an element for its computed spacing, typography, borders and colours.
-Also lists the colours and font families used across the page, scanning up to
+Point at an element for its computed spacing, typography, borders and colors.
+Also lists the colors and font families used across the page, scanning up to
 six thousand elements and telling you when it stops.
 
 COLOR PICKER
@@ -95,7 +107,7 @@ the image tools draw thumbnails, which the browser loads the same way the page
 already did.
 
 Three things are stored on your own computer and nowhere else: the last twelve
-colours you sampled, whether you have turned on copy-on-sample, and which of
+colors you sampled, whether you have turned on copy-on-sample, and which of
 HEX, RGB or HSL that copies. Removing the extension removes them.
 
 You do not have to take any of that on trust. The source is public and the
@@ -132,7 +144,7 @@ any page until the user clicks the icon.
 
 **storage**
 ```
-chrome.storage.local holds the colour picker's last twelve sampled colours and
+chrome.storage.local holds the color picker's last twelve sampled colors and
 its two settings: whether sampling copies to the clipboard automatically, and
 which of HEX, RGB or HSL it copies. That is the complete list. Nothing is
 synced and nothing is sent anywhere.
@@ -228,8 +240,8 @@ works elsewhere.
 | # | Tool | What should be on screen |
 |---|---|---|
 | 1 | Ruler | A box dragged around a real element, the panel showing width, height, X/Y and ratio. Pick something whose size is obviously right, so the numbers are checkable at a glance. |
-| 2 | Inspector | Pointing at a heading or a button, with the box model, typography and colours filled in. The frozen state reads better than mid-hover. |
-| 3 | Color picker | A sampled colour with HEX, RGB and HSL populated and several chips in Recent, so it is visibly a tool rather than an empty shell. |
+| 2 | Inspector | Pointing at a heading or a button, with the box model, typography and colors filled in. The frozen state reads better than mid-hover. |
+| 3 | Color picker | A sampled color with HEX, RGB and HSL populated and several chips in Recent, so it is visibly a tool rather than an empty shell. |
 | 4 | Images | The grid with two or three cards selected, a format chip filtering, and the count line reading "N of M images". |
 | 5 | Page report | The Overview tab with a real byte breakdown, ideally on a page heavy enough that the numbers are interesting. |
 
@@ -244,7 +256,7 @@ All five on `en.wikipedia.org/wiki/Bird`, in `promo/screenshots/`, each verified
 | File | What is in it |
 |---|---|
 | `01-ruler.png` | A 705x367 box around the lead paragraphs, all four edges enclosed, W/H/X,Y/RATIO/CSS populated and the glued badge showing |
-| `02-inspector.png` | `span.mw-page-title-main` frozen, box model, typography and both colour rows filled |
+| `02-inspector.png` | `span.mw-page-title-main` frozen, box model, typography and both color rows filled |
 | `03-images.png` | 113 images, chips reading PNG 27 / JPG 80 / SVG 5 / WEBP 1, missing alt flagged in the grid |
 | `04-page-report.png` | 16,616 elements, 2.25 MB of HTML, 609.7 KB measured, 900 KB of images across 52 files, and the line confirming the total is complete |
 | `05-color-picker.png` | `#3366CC` sampled, HEX/RGB/HSL populated, twelve chips in Recent, copy-on-sample on |
@@ -266,8 +278,64 @@ All five on `en.wikipedia.org/wiki/Bird`, in `promo/screenshots/`, each verified
 
 ---
 
+## The account, and what is public about it
+
+| Field | Value |
+|---|---|
+| Developer account | `larry@connectedgeek.net`, cannot be changed |
+| Publisher display name | Connected Geek |
+| Publisher ID | `a6dbba2e-49df-400e-89e5-27d4b4496c6d` |
+| Contact email | `support@connectedgeek.net`, verified, publicly displayed |
+| Trader declaration | **Trader** |
+| Extension limit | 2 for a new publisher |
+
+**Trader was the correct declaration** and it is not a preference. The European
+Commission test is whether you act for purposes relating to your trade or
+business, not whether money changes hands. CG Scope is free and is published
+under Connected Geek's name, site and support address, so it is published in the
+course of the business.
+
+The consequence, which Google states plainly: verified trader information is
+shown on the public listing. The name, address and phone on the Google payments
+profile are therefore public, and they are not recorded in this repository,
+because this repository is public too.
+
+## The submission
+
+| | |
+|---|---|
+| Item ID | `dfpomlgaiakahanfcnmhollkibnifpkg` |
+| Version | 1.0.0 |
+| Package | `cg-scope-1.0.0.zip`, 18 files, 68,949 bytes |
+| Package SHA-256 | `18530BDDC89DB283C127C13E0B44984F3776DE831440B362D2251F4930C9864F` |
+| Commit | `947e8ba` |
+| Submitted | 2026-09-15 |
+
+**Two answers that were wrong in the form before submission**, recorded because
+they are the ones to check first next time:
+
+- **Remote code defaulted to Yes.** CG Scope loads no external script, no
+  off-package module and no `eval`, which is what the network guard scans
+  thirteen files to enforce on every commit. Answering Yes invites a reviewer to
+  look for remote code, find none, and stop trusting the rest of the form.
+- **The Description field received the category explanation** rather than the
+  detailed description, for the reason now stated at the top of this document.
+
+**The privacy policy URL is the scope page, not the company policy.** The
+Connected Geek policy at `connectedgeek.net/privacy-policy` never mentions CG
+Scope and describes collecting IP addresses, device information and diagnostic
+reports for other products. Pointing a reviewer at it would make them work out
+that none of it applies. `scope.connectedgeek.net/#privacy` says what this
+extension does and does not do, in the same words as the declaration. Verified
+2026-09-15 that the `#privacy` anchor exists on the live GHL page.
+
 ## After it is live
 
-`site/index.html` has two `EDIT:` markers. The Add to Chrome button currently
-states that the listing does not exist, which is honest and will stop being
-true the moment it is approved.
+`site/index.html` has an `EDIT:` marker on the Add to Chrome button, which
+currently states that the listing does not exist. That stops being true on
+approval, and the store URL for `dfpomlgaiakahanfcnmhollkibnifpkg` replaces it.
+
+Then `RELEASING.md` B7, which is the only step that verifies what users actually
+get: install from the public listing on a clean profile, confirm the version,
+confirm the install warning is exactly "Manage your downloads", and run every
+tool from that installed copy.
