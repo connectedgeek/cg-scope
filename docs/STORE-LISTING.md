@@ -196,7 +196,7 @@ document would have reached the dashboard with only screenshots in hand.
 | Asset | Size | Required | Status |
 |---|---|---|---|
 | Store icon | 128x128 | yes | `icons/icon128.png`, already in the package |
-| Screenshots | 1280x800 | at least one, up to five | shot list below |
+| Screenshots | 1280x800 | at least one, up to five | taken 2026-09-15, in `promo/screenshots/` |
 | Small promo tile | 440x280 | yes | built 2026-09-14 |
 | Marquee promo tile | 1400x560 | optional | built 2026-09-14 |
 | Promotional video | YouTube link | listed as required | none |
@@ -235,6 +235,34 @@ works elsewhere.
 
 A screenshot of an empty panel is a screenshot of nothing. Use the tool first,
 then capture.
+
+### What was actually shot, 2026-09-15
+
+All five on `en.wikipedia.org/wiki/Bird`, in `promo/screenshots/`, each verified
+1280x800. Upload them in numbered order; the first is the one most people see.
+
+| File | What is in it |
+|---|---|
+| `01-ruler.png` | A 705x367 box around the lead paragraphs, all four edges enclosed, W/H/X,Y/RATIO/CSS populated and the glued badge showing |
+| `02-inspector.png` | `span.mw-page-title-main` frozen, box model, typography and both colour rows filled |
+| `03-images.png` | 113 images, chips reading PNG 27 / JPG 80 / SVG 5 / WEBP 1, missing alt flagged in the grid |
+| `04-page-report.png` | 16,616 elements, 2.25 MB of HTML, 609.7 KB measured, 900 KB of images across 52 files, and the line confirming the total is complete |
+| `05-color-picker.png` | `#3366CC` sampled, HEX/RGB/HSL populated, twelve chips in Recent, copy-on-sample on |
+
+**Three things learned doing it**, so the next set costs less:
+
+1. **Dismiss the site's own banners first.** The first Ruler attempt was
+   dominated by a Wikimedia fundraising appeal, which made that one shot look
+   unrelated to the other four and put someone else's branding in front of the
+   product.
+2. **Keep the drawn region in the left two thirds.** A capture from a wide
+   high-DPI display is about 2.2:1, the store wants 1.6:1, so roughly a quarter
+   of the width is discarded from the right. A box drawn across the whole page
+   loses its right edge and stops reading as a rectangle.
+3. **The native size does not matter.** Captures came in at 3728x1692 and were
+   cropped to the widest 1.6 slice at full height, then scaled. That keeps the
+   panel text near its original size. Scaling the whole frame to fit would have
+   shrunk everything by about a third and made the panels hard to read.
 
 ---
 
