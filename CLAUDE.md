@@ -664,6 +664,40 @@ had to be rewritten before the commit was pushed. A wrong conclusion that
 reaches the log is worse than one that stays in conversation, because the log is
 the thing later work treats as settled.
 
+### 2026-09-15: the packager worked once, because of what had been run before it
+
+**What it did.** `build.ps1 package` for 1.0.0 stopped with `Unable to find type
+[System.IO.Compression.ZipArchiveMode]`. Every guard had already passed and the
+tree was clean at `947e8ba`. No zip was written.
+
+The zip types come from two assemblies and Windows PowerShell 5.1 loads neither
+by default: `ZipFile` and `ZipFileExtensions` are in
+`System.IO.Compression.FileSystem`, while `ZipArchiveMode` and
+`CompressionLevel` are in `System.IO.Compression`. The script loaded only the
+first, and loading it does not reliably pull in the second.
+
+**Why it survived.** This code packaged 0.8.0 successfully and was treated as
+proven on that basis. It succeeded because that session had already loaded the
+assembly through some earlier command. The same code in a clean session fails
+every time.
+
+`-ErrorAction SilentlyContinue` on the `Add-Type` made it worse. The load failed
+quietly and the consequence surfaced thirty lines later as a missing type, so
+the error named a symptom rather than the cause. That is invariant 5's failure
+mode, silently doing nothing, committed by this script against itself.
+
+**The general rule, which is the reason this entry exists.** *Watching something
+succeed once does not prove it, if the session it ran in was not clean.* Invariant
+3 says a guard is proved by watching it fail; the converse needs stating too. A
+success that depends on ambient state is not a success, and a long-lived shell
+accumulates exactly that state. Where a step touches the environment rather than
+the repository, prove it in a fresh shell.
+
+**What now prevents it.** Both assemblies are named, and the four types are
+asserted before any of them is used. The assertion returns 2, a guard that could
+not run, rather than 1, because an unavailable assembly is an environment
+problem and should not read as a defect in the extension.
+
 ## Unverified paths
 
 Written down rather than remembered, because invariant 1 is the one that keeps

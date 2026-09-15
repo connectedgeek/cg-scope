@@ -1561,7 +1561,47 @@ function Invoke-Package {
     }
 
     # 5. Build it.
-    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    #
+    # The zip types come from two different assemblies, and Windows PowerShell
+    # 5.1 loads neither by default:
+    #
+    #   System.IO.Compression.FileSystem   ZipFile, ZipFileExtensions
+    #   System.IO.Compression              ZipArchiveMode, CompressionLevel
+    #
+    # Loading the first does not reliably pull in the second, so both are named.
+    #
+    # Found 2026-09-15 packaging 1.0.0: this step died with "Unable to find type
+    # [System.IO.Compression.ZipArchiveMode]". The same code had packaged 0.8.0
+    # successfully, because that session had already loaded the assembly through
+    # some earlier command. A step that works or fails depending on what you ran
+    # before it is worse than one that always fails, and watching it succeed
+    # once in a dirty session proved nothing about it.
+    #
+    # -ErrorAction SilentlyContinue was hiding the diagnosis. The load failed
+    # quietly here and surfaced thirty lines later as a missing type, which is
+    # the "silently do nothing" failure mode invariant 5 exists to prevent,
+    # committed by this script against itself.
+    foreach ($asm in @('System.IO.Compression', 'System.IO.Compression.FileSystem')) {
+        try { Add-Type -AssemblyName $asm -ErrorAction Stop } catch { }
+    }
+
+    # Assert the types rather than assume the loads worked. Add-Type is allowed
+    # to fail above because one of the two may already be present by another
+    # route; what matters is whether the types resolve now.
+    foreach ($typeName in @('System.IO.Compression.ZipFile',
+                            'System.IO.Compression.ZipFileExtensions',
+                            'System.IO.Compression.ZipArchiveMode',
+                            'System.IO.Compression.CompressionLevel')) {
+        if (-not ($typeName -as [type])) {
+            Write-Host ''
+            Write-Host ("REFUSED: [{0}] is not available in this session." -f $typeName) -ForegroundColor Red
+            Write-Host '  The compression assemblies could not be loaded, so nothing was built' -ForegroundColor DarkGray
+            Write-Host '  and no zip was written. This is an environment problem rather than' -ForegroundColor DarkGray
+            Write-Host '  a problem with the extension.' -ForegroundColor DarkGray
+            Write-Host ''
+            return 2
+        }
+    }
 
     $all = Get-ChildItem -LiteralPath $RepoRoot -Recurse -File |
            ForEach-Object { $_.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') }
